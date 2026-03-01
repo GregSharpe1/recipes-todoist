@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,28 +27,20 @@ type Recipe struct {
 	ID          string
 	Name        string
 	ImagePath   string
-	Ingredients []Ingredient
-}
-
-type Ingredient struct {
-	Text          string `json:"text"`
-	PushToTodoist bool   `json:"push_to_todoist"`
-}
-
-type ingredientCard struct {
-	Text     string
-	Excluded bool
+	Ingredients []string
 }
 
 type recipeCard struct {
-	ID          string
-	Name        string
-	ImagePath   string
-	Ingredients []ingredientCard
-	QRPath      string
-	QRPagePath  string
-	PushPath    string
-	DeletePath  string
+	ID                   string
+	Name                 string
+	ImagePath            string
+	Ingredients          []string
+	QRPath               string
+	QRPagePath           string
+	PushPath             string
+	DeletePath           string
+	AddIngredientPath    string
+	RemoveIngredientPath string
 }
 
 type indexData struct {
@@ -79,14 +72,16 @@ func (a *App) indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, recipe := range recipes {
 		data.Recipes = append(data.Recipes, recipeCard{
-			ID:          recipe.ID,
-			Name:        recipe.Name,
-			ImagePath:   recipe.ImagePath,
-			Ingredients: ingredientCards(recipe.Ingredients),
-			QRPath:      "/qr/" + recipe.ID,
-			QRPagePath:  "/recipes/" + recipe.ID + "/qr",
-			PushPath:    "/api/push/" + recipe.ID,
-			DeletePath:  "/api/recipes/" + recipe.ID + "/delete",
+			ID:                   recipe.ID,
+			Name:                 recipe.Name,
+			ImagePath:            recipe.ImagePath,
+			Ingredients:          recipe.Ingredients,
+			QRPath:               "/qr/" + recipe.ID,
+			QRPagePath:           "/recipes/" + recipe.ID + "/qr",
+			PushPath:             "/api/push/" + recipe.ID,
+			DeletePath:           "/api/recipes/" + recipe.ID + "/delete",
+			AddIngredientPath:    "/api/recipes/" + recipe.ID + "/ingredients/add",
+			RemoveIngredientPath: "/api/recipes/" + recipe.ID + "/ingredients/remove",
 		})
 	}
 
@@ -160,8 +155,19 @@ func (a *App) pushHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		a.redirectError(w, r, "invalid push request")
+		return
+	}
 
-	if err := a.PushToTodoist(r.Context(), recipeID); err != nil {
+	selectionMode := strings.TrimSpace(r.FormValue("selection_mode")) == "1"
+	selectedIndexes, err := parseSelectedIngredientIndexes(r.Form["ingredient_idx[]"])
+	if err != nil {
+		a.redirectError(w, r, "invalid ingredient selection")
+		return
+	}
+
+	if err := a.PushToTodoist(r.Context(), recipeID, selectedIndexes, selectionMode); err != nil {
 		a.redirectError(w, r, err.Error())
 		return
 	}
@@ -188,6 +194,68 @@ func (a *App) deleteRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	a.redirectNotice(w, r, "recipe archived")
 }
 
+func (a *App) addIngredientHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.redirectError(w, r, "invalid ingredient form")
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("ingredient_name"))
+	measurement := strings.TrimSpace(r.FormValue("ingredient_measurement"))
+	if name == "" {
+		a.redirectError(w, r, "ingredient name is required")
+		return
+	}
+
+	ingredient := name
+	if measurement != "" {
+		ingredient += " " + measurement
+	}
+
+	if err := a.appendIngredientToRecipe(r.Context(), recipeID, ingredient); err != nil {
+		a.redirectError(w, r, "failed to add ingredient")
+		return
+	}
+
+	a.redirectNotice(w, r, "ingredient added")
+}
+
+func (a *App) removeIngredientHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.redirectError(w, r, "invalid ingredient form")
+		return
+	}
+
+	rawIndex := strings.TrimSpace(r.FormValue("ingredient_idx"))
+	idx, err := strconv.Atoi(rawIndex)
+	if err != nil {
+		a.redirectError(w, r, "invalid ingredient")
+		return
+	}
+
+	removed, err := a.removeIngredientFromRecipe(r.Context(), recipeID, idx)
+	if err != nil {
+		a.redirectError(w, r, "failed to remove ingredient")
+		return
+	}
+	if !removed {
+		a.redirectError(w, r, "ingredient not found")
+		return
+	}
+
+	a.redirectNotice(w, r, "ingredient removed")
+}
+
 func (a *App) scanHandler(w http.ResponseWriter, r *http.Request) {
 	recipeID := r.PathValue("id")
 	if recipeID == "" {
@@ -195,7 +263,7 @@ func (a *App) scanHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.PushToTodoist(r.Context(), recipeID); err != nil {
+	if err := a.PushToTodoist(r.Context(), recipeID, nil, false); err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte("<html><body><h1>Failed</h1><p>" + template.HTMLEscapeString(err.Error()) + "</p></body></html>"))
 		return
@@ -254,7 +322,7 @@ func (a *App) qrPageHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>QR - %s</title><style>body{font-family:Segoe UI,Helvetica Neue,sans-serif;margin:0;padding:24px;background:#f7faf9;color:#1f2937}.wrap{max-width:640px;margin:0 auto;background:#fff;border:1px solid #d1d5db;border-radius:14px;padding:20px;box-shadow:0 10px 24px rgba(0,0,0,.06)}h1{margin:0 0 14px;font-size:1.6rem}.meta{color:#4b5563;margin-bottom:14px}.qr{display:block;width:280px;height:280px;margin:14px auto;border:1px solid #e5e7eb;border-radius:10px}.actions{display:flex;gap:10px;justify-content:center;margin-top:14px}.btn{display:inline-block;text-decoration:none;background:#0f766e;color:#fff;padding:10px 14px;border-radius:10px}button{background:#fff;border:1px solid #d1d5db;padding:10px 14px;border-radius:10px;cursor:pointer}@media print{body{background:#fff;padding:0}.wrap{border:0;box-shadow:none;max-width:none}.actions{display:none}}</style></head><body><main class=\"wrap\"><h1>%s</h1><p class=\"meta\">Scan to add ingredients to Todoist</p><img class=\"qr\" src=\"/qr/%s\" alt=\"QR for %s\"><div class=\"actions\"><a class=\"btn\" href=\"/\">Back to recipes</a><button type=\"button\" onclick=\"window.print()\">Print</button></div></main></body></html>", template.HTMLEscapeString(recipe.Name), template.HTMLEscapeString(recipe.Name), template.HTMLEscapeString(recipeID), template.HTMLEscapeString(recipe.Name))
 }
 
-func (a *App) PushToTodoist(ctx context.Context, recipeID string) error {
+func (a *App) PushToTodoist(ctx context.Context, recipeID string, selectedIndexes []int, enforceSelection bool) error {
 	token := strings.TrimSpace(os.Getenv("TODOIST_API_TOKEN"))
 	if token == "" {
 		return errors.New("TODOIST_API_TOKEN is not set")
@@ -268,19 +336,32 @@ func (a *App) PushToTodoist(ctx context.Context, recipeID string) error {
 		return errors.New("recipe has no ingredients")
 	}
 
-	pushable := make([]string, 0, len(recipe.Ingredients))
-	for _, ingredient := range recipe.Ingredients {
-		if !ingredient.PushToTodoist {
-			continue
+	pushable := recipe.Ingredients
+	if enforceSelection {
+		if len(selectedIndexes) == 0 {
+			return errors.New("select at least one ingredient")
 		}
-		text := strings.TrimSpace(ingredient.Text)
-		if text == "" {
-			continue
+		selectedSet := make(map[int]struct{}, len(selectedIndexes))
+		for _, idx := range selectedIndexes {
+			if idx >= 0 && idx < len(recipe.Ingredients) {
+				selectedSet[idx] = struct{}{}
+			}
 		}
-		pushable = append(pushable, text)
+		filtered := make([]string, 0, len(selectedSet))
+		for idx, ingredient := range recipe.Ingredients {
+			if _, ok := selectedSet[idx]; !ok {
+				continue
+			}
+			text := strings.TrimSpace(ingredient)
+			if text == "" {
+				continue
+			}
+			filtered = append(filtered, text)
+		}
+		pushable = filtered
 	}
 	if len(pushable) == 0 {
-		return errors.New("recipe has no ingredients selected for Todoist")
+		return errors.New("select at least one ingredient")
 	}
 
 	var wg sync.WaitGroup
@@ -534,6 +615,64 @@ WHERE id = $1 AND deleted_at IS NULL`
 	return rows == 1, nil
 }
 
+func (a *App) appendIngredientToRecipe(ctx context.Context, id, ingredient string) error {
+	recipe, err := a.getRecipeByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	ingredient = strings.TrimSpace(ingredient)
+	if ingredient == "" {
+		return errors.New("ingredient is empty")
+	}
+
+	recipe.Ingredients = append(recipe.Ingredients, ingredient)
+	return a.updateRecipeIngredients(ctx, id, recipe.Ingredients)
+}
+
+func (a *App) removeIngredientFromRecipe(ctx context.Context, id string, idx int) (bool, error) {
+	recipe, err := a.getRecipeByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if idx < 0 || idx >= len(recipe.Ingredients) {
+		return false, nil
+	}
+
+	ingredients := append([]string{}, recipe.Ingredients[:idx]...)
+	ingredients = append(ingredients, recipe.Ingredients[idx+1:]...)
+	if err := a.updateRecipeIngredients(ctx, id, ingredients); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (a *App) updateRecipeIngredients(ctx context.Context, id string, ingredients []string) error {
+	rawIngredients, err := json.Marshal(normalizeIngredientStrings(ingredients))
+	if err != nil {
+		return err
+	}
+
+	const q = `
+UPDATE recipes
+SET ingredients_json = $2::jsonb
+WHERE id = $1 AND deleted_at IS NULL`
+
+	result, err := a.db.ExecContext(ctx, q, id, rawIngredients)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("recipe not found")
+	}
+
+	return nil
+}
+
 func (a *App) saveUploadedFile(file multipart.File, header *multipart.FileHeader) (string, error) {
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if ext == "" {
@@ -577,26 +716,25 @@ func makeRecipeID(name string) string {
 	return fmt.Sprintf("%s_%d", clean, time.Now().Unix())
 }
 
-func parseIngredients(raw string) []Ingredient {
+func parseIngredients(raw string) []string {
 	replaced := strings.ReplaceAll(raw, "\r\n", "\n")
 	replaced = strings.ReplaceAll(replaced, ",", "\n")
 	parts := strings.Split(replaced, "\n")
-	out := make([]Ingredient, 0, len(parts))
+	out := make([]string, 0, len(parts))
 	for _, part := range parts {
 		item := strings.TrimSpace(part)
 		if item == "" {
 			continue
 		}
-		out = append(out, Ingredient{Text: item, PushToTodoist: true})
+		out = append(out, item)
 	}
 	return out
 }
 
-func parseIngredientFields(r *http.Request) []Ingredient {
+func parseIngredientFields(r *http.Request) []string {
 	names := r.Form["ingredient_name[]"]
 	measurements := r.Form["ingredient_measurement[]"]
-	pushValues := r.Form["ingredient_push[]"]
-	if len(names) == 0 && len(measurements) == 0 && len(pushValues) == 0 {
+	if len(names) == 0 && len(measurements) == 0 {
 		return parseIngredients(r.FormValue("ingredients"))
 	}
 
@@ -604,26 +742,15 @@ func parseIngredientFields(r *http.Request) []Ingredient {
 	if len(measurements) > maxLen {
 		maxLen = len(measurements)
 	}
-	if len(pushValues) > maxLen {
-		maxLen = len(pushValues)
-	}
-
-	out := make([]Ingredient, 0, maxLen)
+	out := make([]string, 0, maxLen)
 	for i := 0; i < maxLen; i++ {
 		name := ""
 		measurement := ""
-		push := true
 		if i < len(names) {
 			name = strings.TrimSpace(names[i])
 		}
 		if i < len(measurements) {
 			measurement = strings.TrimSpace(measurements[i])
-		}
-		if i < len(pushValues) {
-			switch strings.ToLower(strings.TrimSpace(pushValues[i])) {
-			case "0", "false", "no", "off":
-				push = false
-			}
 		}
 		if name == "" {
 			continue
@@ -632,7 +759,7 @@ func parseIngredientFields(r *http.Request) []Ingredient {
 		if measurement != "" {
 			item += " " + measurement
 		}
-		out = append(out, Ingredient{Text: item, PushToTodoist: push})
+		out = append(out, item)
 	}
 
 	if len(out) == 0 {
@@ -641,50 +768,57 @@ func parseIngredientFields(r *http.Request) []Ingredient {
 	return out
 }
 
-func decodeIngredients(raw []byte) ([]Ingredient, error) {
-	var ingredients []Ingredient
-	if err := json.Unmarshal(raw, &ingredients); err == nil {
-		return normalizeIngredients(ingredients), nil
+func decodeIngredients(raw []byte) ([]string, error) {
+	var legacyIngredients []string
+	if err := json.Unmarshal(raw, &legacyIngredients); err == nil {
+		return normalizeIngredientStrings(legacyIngredients), nil
 	}
 
-	var legacy []string
-	if err := json.Unmarshal(raw, &legacy); err != nil {
+	var withSettings []struct {
+		Text          string `json:"text"`
+		PushToTodoist bool   `json:"push_to_todoist"`
+	}
+	if err := json.Unmarshal(raw, &withSettings); err != nil {
 		return nil, err
 	}
 
-	ingredients = make([]Ingredient, 0, len(legacy))
-	for _, item := range legacy {
-		text := strings.TrimSpace(item)
-		if text == "" {
-			continue
-		}
-		ingredients = append(ingredients, Ingredient{Text: text, PushToTodoist: true})
-	}
-	return ingredients, nil
-}
-
-func normalizeIngredients(ingredients []Ingredient) []Ingredient {
-	out := make([]Ingredient, 0, len(ingredients))
-	for _, ingredient := range ingredients {
+	out := make([]string, 0, len(withSettings))
+	for _, ingredient := range withSettings {
 		text := strings.TrimSpace(ingredient.Text)
 		if text == "" {
 			continue
 		}
-		out = append(out, Ingredient{Text: text, PushToTodoist: ingredient.PushToTodoist})
+		out = append(out, text)
+	}
+	return out, nil
+}
+
+func normalizeIngredientStrings(ingredients []string) []string {
+	out := make([]string, 0, len(ingredients))
+	for _, ingredient := range ingredients {
+		text := strings.TrimSpace(ingredient)
+		if text == "" {
+			continue
+		}
+		out = append(out, text)
 	}
 	return out
 }
 
-func ingredientCards(ingredients []Ingredient) []ingredientCard {
-	out := make([]ingredientCard, 0, len(ingredients))
-	for _, ingredient := range ingredients {
-		text := strings.TrimSpace(ingredient.Text)
-		if text == "" {
+func parseSelectedIngredientIndexes(raw []string) ([]int, error) {
+	indexes := make([]int, 0, len(raw))
+	for _, v := range raw {
+		v = strings.TrimSpace(v)
+		if v == "" {
 			continue
 		}
-		out = append(out, ingredientCard{Text: text, Excluded: !ingredient.PushToTodoist})
+		idx, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, err
+		}
+		indexes = append(indexes, idx)
 	}
-	return out
+	return indexes, nil
 }
 
 func (a *App) externalBaseURL(r *http.Request) string {

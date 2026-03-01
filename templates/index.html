@@ -75,7 +75,7 @@
     input, textarea, button {
       font: inherit;
     }
-    input[type="text"], textarea, input[type="file"], select {
+    input[type="text"], textarea, input[type="file"] {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -98,7 +98,7 @@
     }
     .ingredient-row {
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr auto;
+      grid-template-columns: 2fr 1fr auto;
       gap: 0.5rem;
       align-items: center;
     }
@@ -158,7 +158,7 @@
       flex-direction: column;
       min-height: 100%;
     }
-    .card img {
+    .card > img.recipe-photo {
       width: 100%;
       height: 180px;
       object-fit: cover;
@@ -177,6 +177,17 @@
       padding-left: 1.2rem;
       color: #374151;
     }
+    .ingredient-add {
+      display: grid;
+      grid-template-columns: 2fr 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .modal-divider {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 0.9rem 0;
+    }
     .card-actions {
       margin-top: auto;
       display: flex;
@@ -189,11 +200,57 @@
       border: 1px solid var(--line);
       border-radius: 8px;
     }
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 50;
+    }
+    .modal[hidden] {
+      display: none;
+    }
+    .modal-card {
+      width: min(560px, 100%);
+      max-height: 85vh;
+      overflow: auto;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1rem;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+    }
+    .modal-title {
+      margin: 0 0 0.75rem;
+    }
+    .checklist {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      color: #374151;
+    }
+    .modal-actions {
+      margin-top: 1rem;
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
     @media (max-width: 680px) {
       .form-grid {
         grid-template-columns: 1fr;
       }
-      .card img {
+      .card > img.recipe-photo {
         height: 160px;
       }
     }
@@ -224,10 +281,6 @@
               <div class="ingredient-row">
                 <input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>
                 <input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">
-                <select name="ingredient_push[]" aria-label="Todoist sync option">
-                  <option value="1" selected>Add to Todoist</option>
-                  <option value="0">Do not add</option>
-                </select>
                 <button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>
               </div>
             </div>
@@ -247,18 +300,14 @@
       {{range .Recipes}}
       <article class="card">
         {{if .ImagePath}}
-        <img src="{{.ImagePath}}" alt="{{.Name}}">
+        <img class="recipe-photo" src="{{.ImagePath}}" alt="{{.Name}}">
         {{end}}
         <div class="card-body">
+          {{$recipe := .}}
           <h3>{{.Name}}</h3>
-          <ul class="ingredients">
-            {{range .Ingredients}}<li>{{.Text}}{{if .Excluded}} <em>(excluded from Todoist)</em>{{end}}</li>{{end}}
-          </ul>
-          <img class="qr" src="{{.QRPath}}" alt="QR for {{.Name}}">
           <div class="card-actions">
-            <form method="post" action="{{.PushPath}}">
-              <button type="submit">Add to Todoist</button>
-            </form>
+            <button type="button" class="open-modal" data-modal-id="push-modal-{{.ID}}">Add to Todoist</button>
+            <button type="button" class="secondary open-modal" data-modal-id="edit-modal-{{.ID}}">Edit</button>
             <a class="link-btn" href="{{.QRPagePath}}" target="_blank" rel="noopener">Show QR Code</a>
             <form method="post" action="{{.DeletePath}}" onsubmit="return confirm('Are you sure you want to remove this recipe?');">
               <button class="secondary" type="submit">Remove</button>
@@ -266,6 +315,54 @@
           </div>
         </div>
       </article>
+      <div class="modal" id="push-modal-{{.ID}}" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="push-modal-title-{{.ID}}">
+          <h4 class="modal-title" id="push-modal-title-{{.ID}}">Add Ingredients to Todoist</h4>
+          <form method="post" action="{{.PushPath}}">
+            <input type="hidden" name="selection_mode" value="1">
+            {{$recipeID := .ID}}
+            <ul class="checklist">
+              {{range $idx, $ingredient := .Ingredients}}
+              <li class="check-row">
+                <input id="push-{{$recipeID}}-{{$idx}}" type="checkbox" name="ingredient_idx[]" value="{{$idx}}" checked>
+                <label for="push-{{$recipeID}}-{{$idx}}">{{$ingredient}}</label>
+              </li>
+              {{end}}
+            </ul>
+            <div class="modal-actions">
+              <button type="button" class="secondary close-modal" data-modal-id="push-modal-{{.ID}}">Cancel</button>
+              <button type="submit">Add Selected to Todoist</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="modal" id="edit-modal-{{.ID}}" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title-{{.ID}}">
+          <h4 class="modal-title" id="edit-modal-title-{{.ID}}">Edit Ingredients - {{.Name}}</h4>
+          <ul class="checklist">
+            {{range $idx, $ingredient := .Ingredients}}
+            <li class="check-row">
+              <span>{{$ingredient}}</span>
+              <form method="post" action="{{$recipe.RemoveIngredientPath}}">
+                <input type="hidden" name="ingredient_idx" value="{{$idx}}">
+                <button class="secondary" type="submit">Remove</button>
+              </form>
+            </li>
+            {{else}}
+            <li class="check-row">No ingredients yet.</li>
+            {{end}}
+          </ul>
+          <hr class="modal-divider">
+          <form class="ingredient-add" method="post" action="{{.AddIngredientPath}}">
+            <input type="text" name="ingredient_name" placeholder="Ingredient" required>
+            <input type="text" name="ingredient_measurement" placeholder="Measurement">
+            <button class="secondary" type="submit">Add</button>
+          </form>
+          <div class="modal-actions">
+            <button type="button" class="secondary close-modal" data-modal-id="edit-modal-{{.ID}}">Close</button>
+          </div>
+        </div>
+      </div>
       {{else}}
       <article class="panel">No recipes yet. Add your first one above.</article>
       {{end}}
@@ -285,7 +382,6 @@
         row.innerHTML = '' +
           '<input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>' +
           '<input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">' +
-          '<select name="ingredient_push[]" aria-label="Todoist sync option"><option value="1" selected>Add to Todoist</option><option value="0">Do not add</option></select>' +
           '<button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>';
         return row;
       };
@@ -332,6 +428,51 @@
       });
 
       refreshRemovals();
+
+      document.querySelectorAll('.open-modal').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const modalId = button.getAttribute('data-modal-id');
+          if (!modalId) {
+            return;
+          }
+          const modal = document.getElementById(modalId);
+          if (!modal) {
+            return;
+          }
+          modal.hidden = false;
+        });
+      });
+
+      document.querySelectorAll('.close-modal').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const modalId = button.getAttribute('data-modal-id');
+          if (!modalId) {
+            return;
+          }
+          const modal = document.getElementById(modalId);
+          if (!modal) {
+            return;
+          }
+          modal.hidden = true;
+        });
+      });
+
+      document.querySelectorAll('.modal').forEach(function (modal) {
+        modal.addEventListener('click', function (event) {
+          if (event.target === modal) {
+            modal.hidden = true;
+          }
+        });
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') {
+          return;
+        }
+        document.querySelectorAll('.modal').forEach(function (modal) {
+          modal.hidden = true;
+        });
+      });
     })();
   </script>
 </body>
