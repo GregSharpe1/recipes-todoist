@@ -1,0 +1,7 @@
+.git
+.gitignore
+todoist-recipes
+uploads
+*.log
+.envrc
+.envrc.example

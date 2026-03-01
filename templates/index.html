@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recipe Dashboard</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --primary: #0f766e;
+      --primary-hover: #0d5f59;
+      --danger: #b91c1c;
+      --ok: #166534;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at top right, #e2f3ef, var(--bg));
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.25rem;
+    }
+    h1 {
+      margin: 0 0 1rem;
+      font-size: 2rem;
+    }
+    .notice, .error {
+      margin-bottom: 1rem;
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      border: 1px solid;
+    }
+    .notice {
+      background: #ecfdf3;
+      border-color: #bbf7d0;
+      color: var(--ok);
+    }
+    .error {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: var(--danger);
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .field.full {
+      grid-column: 1 / -1;
+    }
+    label {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    input, textarea, button {
+      font: inherit;
+    }
+    input[type="text"], textarea, input[type="file"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.7rem;
+      background: #fff;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    .actions {
+      margin-top: 0.75rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+    button, .link-btn {
+      border: 0;
+      border-radius: 10px;
+      background: var(--primary);
+      color: white;
+      padding: 0.65rem 0.95rem;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 120ms ease;
+    }
+    button:hover, .link-btn:hover {
+      background: var(--primary-hover);
+    }
+    .recipes {
+      margin-top: 1rem;
+      display: grid;
+      gap: 0.85rem;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+    .card img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      border-bottom: 1px solid var(--line);
+      background: #e5e7eb;
+    }
+    .card-body {
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      flex: 1;
+    }
+    .ingredients {
+      margin: 0;
+      padding-left: 1.2rem;
+      color: #374151;
+    }
+    .card-actions {
+      margin-top: auto;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .qr {
+      width: 110px;
+      height: 110px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    @media (max-width: 680px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+      .card img {
+        height: 160px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Recipe Dashboard</h1>
+
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+    {{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}
+
+    <section class="panel">
+      <h2>Add Recipe</h2>
+      <form method="post" action="/api/recipes" enctype="multipart/form-data">
+        <div class="form-grid">
+          <div class="field">
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" required>
+          </div>
+          <div class="field">
+            <label for="photo">Photo</label>
+            <input id="photo" name="photo" type="file" accept="image/*">
+          </div>
+          <div class="field full">
+            <label for="ingredients">Ingredients (one per line or comma separated)</label>
+            <textarea id="ingredients" name="ingredients" required></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">Save Recipe</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="recipes">
+      {{range .Recipes}}
+      <article class="card">
+        {{if .ImagePath}}
+        <img src="{{.ImagePath}}" alt="{{.Name}}">
+        {{end}}
+        <div class="card-body">
+          <h3>{{.Name}}</h3>
+          <ul class="ingredients">
+            {{range .Ingredients}}<li>{{.}}</li>{{end}}
+          </ul>
+          <img class="qr" src="{{.QRPath}}" alt="QR for {{.Name}}">
+          <div class="card-actions">
+            <form method="post" action="{{.PushPath}}">
+              <button type="submit">Push to Todoist</button>
+            </form>
+            <a class="link-btn" href="{{.QRPath}}" target="_blank" rel="noopener">Open QR</a>
+          </div>
+        </div>
+      </article>
+      {{else}}
+      <article class="panel">No recipes yet. Add your first one above.</article>
+      {{end}}
+    </section>
+  </div>
+</body>
+</html>
