@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"todoist-recipes/importers"
 )
 
 func main() {
@@ -41,12 +43,19 @@ func main() {
 		projectID:  resolveTodoistProjectID(*todoistProjectFlag),
 		apiBaseURL: resolveTodoistAPIBaseURL(),
 		db:         db,
+		importerRegistry: importers.NewRegistry(
+			importers.NewGoustoImporter(http.DefaultClient),
+			importers.NewBBCGoodFoodImporter(http.DefaultClient),
+		),
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.HandlerFunc(app.indexHandler))
+	mux.Handle("POST /api/import", http.HandlerFunc(app.importRecipeHandler))
 	mux.Handle("POST /api/recipes", http.HandlerFunc(app.createRecipeHandler))
 	mux.Handle("POST /api/recipes/{id}/delete", http.HandlerFunc(app.deleteRecipeHandler))
+	mux.Handle("POST /api/recipes/{id}/photo", http.HandlerFunc(app.updateRecipePhotoHandler))
+	mux.Handle("POST /api/recipes/{id}/photo/remove", http.HandlerFunc(app.removeRecipePhotoHandler))
 	mux.Handle("POST /api/recipes/{id}/ingredients/add", http.HandlerFunc(app.addIngredientHandler))
 	mux.Handle("POST /api/recipes/{id}/ingredients/remove", http.HandlerFunc(app.removeIngredientHandler))
 	mux.Handle("POST /api/recipes/{id}/ingredients/update", http.HandlerFunc(app.updateIngredientHandler))

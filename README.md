@@ -4,9 +4,13 @@ A standalone Go web app for saving recipes (with uploaded photos) and pushing in
 
 Features:
 - Create recipes from a web form (`name`, `photo`, `ingredients`).
+- Import recipes from Gousto and BBC Good Food links and prefill the create form for 2 people.
+- Import also prefills an image preview and automatically saves that image when you save the recipe (unless you upload your own photo).
 - Use structured ingredient fields with optional measurements (for example `Chicken` + `500g`).
 - Edit existing recipes from an Edit modal (add, update, and remove ingredients).
 - Choose ingredients at push time from a popup (all selected by default).
+- Keep the original recipe source URL and open it from each recipe card.
+- Update or remove photos on existing recipes from the Edit modal.
 - Persist recipes in PostgreSQL.
 - Store uploaded photos in `uploads/`.
 - Push ingredients to Todoist from the UI or via QR scan.
@@ -52,6 +56,13 @@ go run .
 4) Open:
 
 - `http://localhost:8080`
+
+## Import From Gousto / BBC Good Food
+
+- Paste a `gousto.co.uk` or `bbcgoodfood.com` recipe URL into the import field and click `Import Ingredients (2 people)`.
+- The app prefills the Add Recipe form (name + ingredients) so you can review before saving.
+- The app also prefills the source image preview and saves that image on recipe save if no manual photo is uploaded.
+- If the page does not clearly expose 2-person quantities, the app falls back to default ingredient amounts and shows a warning.
 
 ## QR URL Configuration (Important)
 
@@ -120,8 +131,11 @@ If validation fails, the app exits early with a clear error.
 ## Routes
 
 - `GET /` dashboard + create form
+- `POST /api/import` import recipe details from supported source URL (currently Gousto and BBC Good Food)
 - `POST /api/recipes` create recipe (multipart upload)
 - `POST /api/recipes/{id}/delete` archive recipe (soft delete)
+- `POST /api/recipes/{id}/photo` add or replace a recipe photo
+- `POST /api/recipes/{id}/photo/remove` remove a recipe photo
 - `POST /api/recipes/{id}/ingredients/save` replace ingredient list for a recipe (used by Edit modal Save Changes)
 - `POST /api/recipes/{id}/ingredients/add` add one ingredient to recipe
 - `POST /api/recipes/{id}/ingredients/update` update one ingredient by index

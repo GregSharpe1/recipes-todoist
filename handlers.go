@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,12 +22,14 @@ import (
 
 	_ "github.com/lib/pq"
 	qrcode "github.com/skip2/go-qrcode"
+	"todoist-recipes/importers"
 )
 
 type Recipe struct {
 	ID          string
 	Name        string
 	ImagePath   string
+	SourceURL   string
 	Ingredients []string
 }
 
@@ -34,11 +37,15 @@ type recipeCard struct {
 	ID                   string
 	Name                 string
 	ImagePath            string
+	SourceURL            string
+	SourceLabel          string
 	Ingredients          []string
 	QRPath               string
 	QRPagePath           string
 	PushPath             string
 	DeletePath           string
+	UpdatePhotoPath      string
+	RemovePhotoPath      string
 	AddIngredientPath    string
 	RemoveIngredientPath string
 	UpdateIngredientPath string
@@ -46,47 +53,136 @@ type recipeCard struct {
 }
 
 type indexData struct {
-	Recipes []recipeCard
-	Error   string
-	Notice  string
+	Recipes            []recipeCard
+	Error              string
+	Notice             string
+	Warnings           []string
+	PrefillName        string
+	PrefillIngredients []string
+	PrefillRows        []prefillRow
+	PrefillSourceURL   string
+	PrefillImageURL    string
+	ImportURL          string
+}
+
+type prefillRow struct {
+	Name        string
+	Measurement string
 }
 
 type App struct {
-	uploadDir  string
-	tmpl       *template.Template
-	httpClient *http.Client
-	baseURL    string
-	projectID  string
-	apiBaseURL string
-	db         *sql.DB
+	uploadDir        string
+	tmpl             *template.Template
+	httpClient       *http.Client
+	baseURL          string
+	projectID        string
+	apiBaseURL       string
+	db               *sql.DB
+	importerRegistry *importers.Registry
 }
 
 func (a *App) indexHandler(w http.ResponseWriter, r *http.Request) {
-	recipes, err := a.listRecipes(r.Context())
+	data, err := a.buildIndexData(r.Context())
 	if err != nil {
 		http.Error(w, "failed to load recipes", http.StatusInternalServerError)
 		return
 	}
 
-	data := indexData{
-		Error:  r.URL.Query().Get("error"),
-		Notice: r.URL.Query().Get("notice"),
+	data.Error = r.URL.Query().Get("error")
+	data.Notice = r.URL.Query().Get("notice")
+
+	if err := a.tmpl.Execute(w, data); err != nil {
+		http.Error(w, "template render failed", http.StatusInternalServerError)
 	}
+}
+
+func (a *App) importRecipeHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		a.renderIndexWithMessages(w, r, "invalid import form", "", nil, "", nil)
+		return
+	}
+
+	importURL := strings.TrimSpace(r.FormValue("import_url"))
+	if importURL == "" {
+		a.renderIndexWithMessages(w, r, "import URL is required", "", nil, "", nil)
+		return
+	}
+
+	imported, err := a.importerRegistry.Import(r.Context(), importers.ImportRequest{URL: importURL, TargetServings: 2})
+	if err != nil {
+		msg := "import failed"
+		switch {
+		case errors.Is(err, importers.ErrUnsupportedSource):
+			msg = "unsupported source URL (currently gousto.co.uk and bbcgoodfood.com)"
+		case errors.Is(err, importers.ErrFetchFailed):
+			msg = "failed to fetch recipe page"
+		case errors.Is(err, importers.ErrParseFailed):
+			msg = "could not extract ingredients from this recipe page"
+		}
+		a.renderIndexWithMessages(w, r, msg, "", nil, importURL, nil)
+		return
+	}
+	imported.ImageURL = resolveImportedImageURL(imported.SourceURL, imported.ImageURL)
+
+	notice := "recipe imported from " + imported.SourceName + " - review and save"
+	a.renderIndexWithMessages(w, r, "", notice, imported.Warnings, imported.SourceURL, &imported)
+}
+
+func (a *App) buildIndexData(ctx context.Context) (indexData, error) {
+	recipes, err := a.listRecipes(ctx)
+	if err != nil {
+		return indexData{}, err
+	}
+
+	data := indexData{}
 	for _, recipe := range recipes {
 		data.Recipes = append(data.Recipes, recipeCard{
 			ID:                   recipe.ID,
 			Name:                 recipe.Name,
 			ImagePath:            recipe.ImagePath,
+			SourceURL:            recipe.SourceURL,
+			SourceLabel:          sourceLabelForURL(recipe.SourceURL),
 			Ingredients:          recipe.Ingredients,
 			QRPath:               "/qr/" + recipe.ID,
 			QRPagePath:           "/recipes/" + recipe.ID + "/qr",
 			PushPath:             "/api/push/" + recipe.ID,
 			DeletePath:           "/api/recipes/" + recipe.ID + "/delete",
+			UpdatePhotoPath:      "/api/recipes/" + recipe.ID + "/photo",
+			RemovePhotoPath:      "/api/recipes/" + recipe.ID + "/photo/remove",
 			AddIngredientPath:    "/api/recipes/" + recipe.ID + "/ingredients/add",
 			RemoveIngredientPath: "/api/recipes/" + recipe.ID + "/ingredients/remove",
 			UpdateIngredientPath: "/api/recipes/" + recipe.ID + "/ingredients/update",
 			SaveIngredientsPath:  "/api/recipes/" + recipe.ID + "/ingredients/save",
 		})
+	}
+
+	return data, nil
+}
+
+func (a *App) renderIndexWithMessages(w http.ResponseWriter, r *http.Request, errMsg, notice string, warnings []string, importURL string, imported *importers.ImportedRecipe) {
+	data, err := a.buildIndexData(r.Context())
+	if err != nil {
+		http.Error(w, "failed to load recipes", http.StatusInternalServerError)
+		return
+	}
+
+	data.Error = errMsg
+	data.Notice = notice
+	data.Warnings = warnings
+	data.ImportURL = importURL
+	if imported != nil {
+		data.PrefillName = imported.Name
+		data.PrefillIngredients = imported.Ingredients
+		data.PrefillSourceURL = imported.SourceURL
+		data.PrefillImageURL = imported.ImageURL
+		data.PrefillRows = make([]prefillRow, 0, len(imported.Ingredients))
+		for _, ingredient := range imported.Ingredients {
+			name, measurement := splitIngredientForPrefill(ingredient)
+			if strings.TrimSpace(name) == "" {
+				continue
+			}
+			data.PrefillRows = append(data.PrefillRows, prefillRow{Name: name, Measurement: measurement})
+		}
 	}
 
 	if err := a.tmpl.Execute(w, data); err != nil {
@@ -101,6 +197,22 @@ func (a *App) createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
+	sourceURL := strings.TrimSpace(r.FormValue("source_url"))
+	importedImageURL := strings.TrimSpace(r.FormValue("imported_image_url"))
+	if sourceURL != "" {
+		u, err := url.Parse(sourceURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			a.redirectError(w, r, "source URL must be a valid absolute URL")
+			return
+		}
+	}
+	if importedImageURL != "" {
+		u, err := url.Parse(importedImageURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			a.redirectError(w, r, "imported image URL must be a valid absolute URL")
+			return
+		}
+	}
 	ingredients := parseIngredientFields(r)
 	if name == "" {
 		a.redirectError(w, r, "recipe name is required")
@@ -118,6 +230,13 @@ func (a *App) createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 			a.redirectError(w, r, "failed to read uploaded image")
 			return
 		}
+		if importedImageURL != "" {
+			imgPath, err = a.saveImportedImage(importedImageURL)
+			if err != nil {
+				a.redirectError(w, r, "failed to fetch imported image")
+				return
+			}
+		}
 	} else {
 		defer file.Close()
 		imgPath, err = a.saveUploadedFile(file, header)
@@ -133,6 +252,7 @@ func (a *App) createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		ID:          recipeID,
 		Name:        name,
 		ImagePath:   imgPath,
+		SourceURL:   sourceURL,
 		Ingredients: ingredients,
 	}
 
@@ -326,6 +446,76 @@ func (a *App) saveIngredientsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.redirectNotice(w, r, "recipe ingredients saved")
+}
+
+func (a *App) updateRecipePhotoHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		a.redirectError(w, r, "invalid photo upload form")
+		return
+	}
+
+	recipe, err := a.getRecipeByID(r.Context(), recipeID)
+	if err != nil {
+		a.redirectError(w, r, "recipe not found")
+		return
+	}
+
+	file, header, err := r.FormFile("photo")
+	if err != nil {
+		a.redirectError(w, r, "photo file is required")
+		return
+	}
+	defer file.Close()
+
+	newPath, err := a.saveUploadedFile(file, header)
+	if err != nil {
+		a.redirectError(w, r, "failed to save image")
+		return
+	}
+
+	if err := a.updateRecipeImagePath(r.Context(), recipeID, newPath); err != nil {
+		_ = a.deleteUploadedFile(newPath)
+		a.redirectError(w, r, "failed to update recipe photo")
+		return
+	}
+
+	if recipe.ImagePath != "" && recipe.ImagePath != newPath {
+		_ = a.deleteUploadedFile(recipe.ImagePath)
+	}
+
+	a.redirectNotice(w, r, "recipe photo updated")
+}
+
+func (a *App) removeRecipePhotoHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	recipe, err := a.getRecipeByID(r.Context(), recipeID)
+	if err != nil {
+		a.redirectError(w, r, "recipe not found")
+		return
+	}
+
+	if recipe.ImagePath == "" {
+		a.redirectNotice(w, r, "recipe has no photo")
+		return
+	}
+
+	if err := a.updateRecipeImagePath(r.Context(), recipeID, ""); err != nil {
+		a.redirectError(w, r, "failed to remove recipe photo")
+		return
+	}
+
+	_ = a.deleteUploadedFile(recipe.ImagePath)
+	a.redirectNotice(w, r, "recipe photo removed")
 }
 
 func (a *App) scanHandler(w http.ResponseWriter, r *http.Request) {
@@ -560,6 +750,7 @@ CREATE TABLE IF NOT EXISTS recipes (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
 	image_path TEXT NOT NULL,
+	source_url TEXT NOT NULL DEFAULT '',
 	ingredients_json JSONB NOT NULL,
 	deleted_at TIMESTAMPTZ,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -571,13 +762,20 @@ CREATE TABLE IF NOT EXISTS recipes (
 	const qAlter = `
 ALTER TABLE recipes
 ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`
-	_, err := db.ExecContext(ctx, qAlter)
+	if _, err := db.ExecContext(ctx, qAlter); err != nil {
+		return err
+	}
+
+	const qAlterSource = `
+ALTER TABLE recipes
+ADD COLUMN IF NOT EXISTS source_url TEXT NOT NULL DEFAULT '';`
+	_, err := db.ExecContext(ctx, qAlterSource)
 	return err
 }
 
 func (a *App) listRecipes(ctx context.Context) ([]Recipe, error) {
 	const q = `
-SELECT id, name, image_path, ingredients_json
+SELECT id, name, image_path, source_url, ingredients_json
 FROM recipes
 WHERE deleted_at IS NULL
 ORDER BY created_at DESC, id DESC`
@@ -592,7 +790,7 @@ ORDER BY created_at DESC, id DESC`
 	for rows.Next() {
 		var recipe Recipe
 		var rawIngredients []byte
-		if err := rows.Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &rawIngredients); err != nil {
+		if err := rows.Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &recipe.SourceURL, &rawIngredients); err != nil {
 			return nil, err
 		}
 		ingredients, err := decodeIngredients(rawIngredients)
@@ -624,13 +822,13 @@ func (a *App) recipeExists(ctx context.Context, id string) (bool, error) {
 
 func (a *App) getRecipeByID(ctx context.Context, id string) (Recipe, error) {
 	const q = `
-SELECT id, name, image_path, ingredients_json
+SELECT id, name, image_path, source_url, ingredients_json
 FROM recipes
 WHERE id = $1 AND deleted_at IS NULL`
 
 	var recipe Recipe
 	var rawIngredients []byte
-	err := a.db.QueryRowContext(ctx, q, id).Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &rawIngredients)
+	err := a.db.QueryRowContext(ctx, q, id).Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &recipe.SourceURL, &rawIngredients)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Recipe{}, errors.New("recipe not found")
 	}
@@ -653,11 +851,11 @@ func (a *App) insertRecipe(ctx context.Context, recipe Recipe) (bool, error) {
 	}
 
 	const q = `
-INSERT INTO recipes (id, name, image_path, ingredients_json)
-VALUES ($1, $2, $3, $4::jsonb)
+INSERT INTO recipes (id, name, image_path, source_url, ingredients_json)
+VALUES ($1, $2, $3, $4, $5::jsonb)
 ON CONFLICT (id) DO NOTHING`
 
-	result, err := a.db.ExecContext(ctx, q, recipe.ID, recipe.Name, recipe.ImagePath, rawIngredients)
+	result, err := a.db.ExecContext(ctx, q, recipe.ID, recipe.Name, recipe.ImagePath, recipe.SourceURL, rawIngredients)
 	if err != nil {
 		return false, err
 	}
@@ -767,6 +965,45 @@ WHERE id = $1 AND deleted_at IS NULL`
 	return nil
 }
 
+func (a *App) updateRecipeImagePath(ctx context.Context, id, imagePath string) error {
+	const q = `
+UPDATE recipes
+SET image_path = $2
+WHERE id = $1 AND deleted_at IS NULL`
+
+	result, err := a.db.ExecContext(ctx, q, id, imagePath)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("recipe not found")
+	}
+	return nil
+}
+
+func (a *App) deleteUploadedFile(imagePath string) error {
+	clean := strings.TrimSpace(imagePath)
+	if clean == "" {
+		return nil
+	}
+	const prefix = "/uploads/"
+	if !strings.HasPrefix(clean, prefix) {
+		return nil
+	}
+	name := strings.TrimSpace(strings.TrimPrefix(clean, prefix))
+	if name == "" {
+		return nil
+	}
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return nil
+	}
+	return os.Remove(filepath.Join(a.uploadDir, name))
+}
+
 func (a *App) saveUploadedFile(file multipart.File, header *multipart.FileHeader) (string, error) {
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if ext == "" {
@@ -787,6 +1024,95 @@ func (a *App) saveUploadedFile(file multipart.File, header *multipart.FileHeader
 	}
 
 	return "/uploads/" + fileName, nil
+}
+
+func (a *App) saveImportedImage(rawURL string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", errors.New("unsupported image URL scheme")
+	}
+	if !isAllowedImportImageHost(u.Hostname()) {
+		return "", errors.New("imported image host is not allowed")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "todoist-recipes/1.0 (+recipe importer)")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("image fetch status %d", resp.StatusCode)
+	}
+
+	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if contentType != "" && !strings.HasPrefix(contentType, "image/") {
+		return "", errors.New("imported URL is not an image")
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return "", err
+	}
+	if len(data) == 0 {
+		return "", errors.New("empty image response")
+	}
+
+	ext := extensionFromImageResponse(contentType, u.Path)
+	fileName := fmt.Sprintf("recipe_%d%s", time.Now().UnixNano(), ext)
+	absPath := filepath.Join(a.uploadDir, fileName)
+	if err := os.WriteFile(absPath, data, 0o644); err != nil {
+		return "", err
+	}
+
+	return "/uploads/" + fileName, nil
+}
+
+func extensionFromImageResponse(contentType, pathValue string) string {
+	if idx := strings.Index(contentType, ";"); idx >= 0 {
+		contentType = contentType[:idx]
+	}
+	switch strings.TrimSpace(contentType) {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	}
+
+	ext := strings.ToLower(filepath.Ext(pathValue))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp", ".gif":
+		if ext == ".jpeg" {
+			return ".jpg"
+		}
+		return ext
+	default:
+		return ".jpg"
+	}
+}
+
+func isAllowedImportImageHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	switch host {
+	case "gousto.co.uk", "www.gousto.co.uk", "production-media.gousto.co.uk":
+		return true
+	case "bbcgoodfood.com", "www.bbcgoodfood.com", "images.immediate.co.uk":
+		return true
+	default:
+		return false
+	}
 }
 
 func makeRecipeID(name string) string {
@@ -909,6 +1235,99 @@ func parseIngredientTextFields(values []string) []string {
 		out = append(out, text)
 	}
 	return out
+}
+
+func splitIngredientForPrefill(raw string) (string, string) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", ""
+	}
+
+	if strings.HasSuffix(text, ")") {
+		open := strings.LastIndex(text, "(")
+		if open > 0 {
+			name := strings.TrimSpace(text[:open])
+			measurement := strings.TrimSpace(text[open+1 : len(text)-1])
+			if name != "" && measurement != "" {
+				return name, measurement
+			}
+		}
+	}
+
+	parts := strings.Fields(text)
+	if len(parts) >= 2 {
+		first := strings.TrimSpace(parts[0])
+		if isQuantityToken(first) {
+			measurement := first
+			nameStart := 1
+
+			if len(parts) >= 3 && isUnitToken(parts[1]) {
+				measurement = first + " " + parts[1]
+				nameStart = 2
+			}
+
+			name := strings.TrimSpace(strings.Join(parts[nameStart:], " "))
+			if name != "" {
+				return name, measurement
+			}
+		}
+	}
+
+	return text, ""
+}
+
+var quantityTokenPattern = regexp.MustCompile(`^(?:\d+(?:[./]\d+)?|\d+[¼½¾⅓⅔⅛⅜⅝⅞]?|[¼½¾⅓⅔⅛⅜⅝⅞]|\d+(?:g|kg|mg|ml|l|oz|lb|lbs|cm|mm))$`)
+
+func isQuantityToken(token string) bool {
+	token = strings.ToLower(strings.TrimSpace(token))
+	token = strings.Trim(token, ",")
+	return quantityTokenPattern.MatchString(token)
+}
+
+func isUnitToken(token string) bool {
+	token = strings.ToLower(strings.TrimSpace(token))
+	token = strings.Trim(token, ",")
+	_, ok := map[string]struct{}{
+		"g": {}, "kg": {}, "mg": {}, "ml": {}, "l": {}, "oz": {}, "lb": {}, "lbs": {},
+		"tsp": {}, "tbsp": {}, "cup": {}, "cups": {}, "pinch": {}, "pinches": {},
+		"pack": {}, "packs": {}, "clove": {}, "cloves": {}, "sprig": {}, "sprigs": {},
+	}[token]
+	return ok
+}
+
+func sourceLabelForURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	switch host {
+	case "gousto.co.uk", "www.gousto.co.uk":
+		return "Gousto"
+	case "bbcgoodfood.com", "www.bbcgoodfood.com":
+		return "BBC Good Food"
+	default:
+		return ""
+	}
+}
+
+func resolveImportedImageURL(sourceURL, imageURL string) string {
+	imageURL = strings.TrimSpace(imageURL)
+	if imageURL == "" {
+		return ""
+	}
+	img, err := url.Parse(imageURL)
+	if err != nil {
+		return ""
+	}
+	if img.IsAbs() {
+		return img.String()
+	}
+	base, err := url.Parse(strings.TrimSpace(sourceURL))
+	if err != nil {
+		return ""
+	}
+	return base.ResolveReference(img).String()
 }
 
 func parseSelectedIngredientIndexes(raw []string) ([]int, error) {

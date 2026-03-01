@@ -101,6 +101,15 @@
       color: var(--danger);
     }
 
+    .warning {
+      margin-bottom: 0.9rem;
+      border-radius: 12px;
+      padding: 0.78rem 1rem;
+      border: 1px solid #fed7aa;
+      background: #fff7ed;
+      color: #9a3412;
+    }
+
     .panel {
       background: linear-gradient(180deg, var(--surface-strong), var(--surface));
       border: 1px solid #d8d1c3;
@@ -112,6 +121,14 @@
     .panel h2 {
       margin-bottom: 0.8rem;
       font-size: 1.2rem;
+    }
+
+    .import-form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.6rem;
+      align-items: end;
+      margin-bottom: 1rem;
     }
 
     .form-grid {
@@ -286,9 +303,61 @@
       line-height: 1.25;
     }
 
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .source-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid #99f6e4;
+      background: #ecfeff;
+      color: #115e59;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
     .ingredient-add {
       display: grid;
       grid-template-columns: 2fr 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .photo-tools {
+      display: grid;
+      gap: 0.6rem;
+      margin-bottom: 0.9rem;
+      padding: 0.7rem;
+      border: 1px solid #e7e1d5;
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .photo-preview {
+      width: 100%;
+      max-height: 180px;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 1px solid #ddd7ca;
+    }
+
+    .photo-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .upload-photo-form {
+      display: grid;
+      grid-template-columns: 1fr auto;
       gap: 0.5rem;
       align-items: center;
     }
@@ -424,9 +493,11 @@
     }
 
     @media (max-width: 820px) {
+      .import-form,
       .form-grid,
       .ingredient-row,
-      .ingredient-add {
+      .ingredient-add,
+      .upload-photo-form {
         grid-template-columns: 1fr;
       }
     }
@@ -453,27 +524,58 @@
 
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}
+    {{range .Warnings}}<div class="warning">{{.}}</div>{{end}}
 
     <section class="panel">
+      <h2>Import From Gousto / BBC Good Food</h2>
+      <form class="import-form" method="post" action="/api/import">
+        <div class="field">
+          <label for="import-url">Recipe URL</label>
+          <input id="import-url" name="import_url" type="text" placeholder="https://www.gousto.co.uk/... or https://www.bbcgoodfood.com/..." value="{{.ImportURL}}" required>
+        </div>
+        <button type="submit">Import Ingredients (2 people)</button>
+      </form>
+
       <h2>Add Recipe</h2>
       <form method="post" action="/api/recipes" enctype="multipart/form-data">
         <div class="form-grid">
           <div class="field">
             <label for="name">Name</label>
-            <input id="name" name="name" type="text" required>
+            <input id="name" name="name" type="text" value="{{.PrefillName}}" required>
           </div>
           <div class="field">
             <label for="photo">Photo</label>
             <input id="photo" name="photo" type="file" accept="image/*">
           </div>
           <div class="field full">
+            <label for="source-url">Original Recipe URL (optional)</label>
+            <input id="source-url" name="source_url" type="text" placeholder="https://www.gousto.co.uk/cookbook/..." value="{{.PrefillSourceURL}}">
+          </div>
+          <input type="hidden" name="imported_image_url" value="{{.PrefillImageURL}}">
+          {{if .PrefillImageURL}}
+          <div class="field full">
+            <label>Imported image preview</label>
+            <img class="photo-preview" src="{{.PrefillImageURL}}" alt="Imported recipe preview image">
+          </div>
+          {{end}}
+          <div class="field full">
             <label>Ingredients + measurement</label>
             <div id="ingredient-builder" class="ingredient-builder">
+              {{if .PrefillRows}}
+              {{range .PrefillRows}}
+              <div class="ingredient-row">
+                <input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" value="{{.Name}}" required>
+                <input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)" value="{{.Measurement}}">
+                <button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>
+              </div>
+              {{end}}
+              {{else}}
               <div class="ingredient-row">
                 <input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>
                 <input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">
                 <button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>
               </div>
+              {{end}}
             </div>
             <div class="inline-actions">
               <button id="add-ingredient" class="secondary" type="button">Add ingredient</button>
@@ -494,11 +596,17 @@
         <img class="recipe-photo" src="{{.ImagePath}}" alt="{{.Name}}">
         {{end}}
         <div class="card-body">
-          <h3>{{.Name}}</h3>
+          <div class="title-row">
+            <h3>{{.Name}}</h3>
+            {{if .SourceLabel}}<span class="source-badge">Imported from {{.SourceLabel}}</span>{{end}}
+          </div>
           <div class="card-actions">
             <button type="button" class="open-modal" data-modal-id="push-modal-{{.ID}}">Add to Todoist</button>
             <button type="button" class="secondary open-modal" data-modal-id="edit-modal-{{.ID}}">Edit</button>
             <a class="link-btn" href="{{.QRPagePath}}" target="_blank" rel="noopener">Show QR Code</a>
+            {{if .SourceURL}}
+            <a class="link-btn" href="{{.SourceURL}}" target="_blank" rel="noopener">Open Original</a>
+            {{end}}
             <form method="post" action="{{.DeletePath}}" onsubmit="return confirm('Are you sure you want to remove this recipe?');">
               <button class="secondary" type="submit">Remove</button>
             </form>
@@ -528,7 +636,23 @@
       </div>
       <div class="modal" id="edit-modal-{{.ID}}" hidden>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title-{{.ID}}">
-          <h4 class="modal-title" id="edit-modal-title-{{.ID}}">Edit Ingredients - {{.Name}}</h4>
+          <h4 class="modal-title" id="edit-modal-title-{{.ID}}">Edit Recipe - {{.Name}}</h4>
+          <section class="photo-tools">
+            {{if .ImagePath}}
+            <img class="photo-preview" src="{{.ImagePath}}" alt="Current photo for {{.Name}}">
+            {{end}}
+            <form class="upload-photo-form" method="post" action="{{.UpdatePhotoPath}}" enctype="multipart/form-data">
+              <input type="file" name="photo" accept="image/*" required>
+              <button class="secondary" type="submit">{{if .ImagePath}}Replace photo{{else}}Add photo{{end}}</button>
+            </form>
+            {{if .ImagePath}}
+            <div class="photo-actions">
+              <form method="post" action="{{.RemovePhotoPath}}" onsubmit="return confirm('Remove photo from this recipe?');">
+                <button class="secondary" type="submit">Remove photo</button>
+              </form>
+            </div>
+            {{end}}
+          </section>
           <form class="edit-ingredients-form" method="post" action="{{.SaveIngredientsPath}}">
             <ul class="ingredient-edit-list" data-edit-list>
               {{range .Ingredients}}
