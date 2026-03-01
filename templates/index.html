@@ -75,7 +75,7 @@
     input, textarea, button {
       font: inherit;
     }
-    input[type="text"], textarea, input[type="file"] {
+    input[type="text"], textarea, input[type="file"], select {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -98,7 +98,7 @@
     }
     .ingredient-row {
       display: grid;
-      grid-template-columns: 2fr 1fr auto;
+      grid-template-columns: 2fr 1fr 1fr auto;
       gap: 0.5rem;
       align-items: center;
     }
@@ -224,6 +224,10 @@
               <div class="ingredient-row">
                 <input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>
                 <input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">
+                <select name="ingredient_push[]" aria-label="Todoist sync option">
+                  <option value="1" selected>Add to Todoist</option>
+                  <option value="0">Do not add</option>
+                </select>
                 <button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>
               </div>
             </div>
@@ -248,7 +252,7 @@
         <div class="card-body">
           <h3>{{.Name}}</h3>
           <ul class="ingredients">
-            {{range .Ingredients}}<li>{{.}}</li>{{end}}
+            {{range .Ingredients}}<li>{{.Text}}{{if .Excluded}} <em>(excluded from Todoist)</em>{{end}}</li>{{end}}
           </ul>
           <img class="qr" src="{{.QRPath}}" alt="QR for {{.Name}}">
           <div class="card-actions">
@@ -281,6 +285,7 @@
         row.innerHTML = '' +
           '<input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>' +
           '<input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">' +
+          '<select name="ingredient_push[]" aria-label="Todoist sync option"><option value="1" selected>Add to Todoist</option><option value="0">Do not add</option></select>' +
           '<button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>';
         return row;
       };

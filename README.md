@@ -5,6 +5,7 @@ A standalone Go web app for saving recipes (with uploaded photos) and pushing in
 Features:
 - Create recipes from a web form (`name`, `photo`, `ingredients`).
 - Use structured ingredient fields with optional measurements (for example `Chicken` + `500g`).
+- Choose per ingredient whether it should be added to Todoist (defaults to adding all).
 - Persist recipes in PostgreSQL.
 - Store uploaded photos in `uploads/`.
 - Push ingredients to Todoist from the UI or via QR scan.
