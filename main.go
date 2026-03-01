@@ -49,6 +49,8 @@ func main() {
 	mux.Handle("POST /api/recipes/{id}/delete", http.HandlerFunc(app.deleteRecipeHandler))
 	mux.Handle("POST /api/recipes/{id}/ingredients/add", http.HandlerFunc(app.addIngredientHandler))
 	mux.Handle("POST /api/recipes/{id}/ingredients/remove", http.HandlerFunc(app.removeIngredientHandler))
+	mux.Handle("POST /api/recipes/{id}/ingredients/update", http.HandlerFunc(app.updateIngredientHandler))
+	mux.Handle("POST /api/recipes/{id}/ingredients/save", http.HandlerFunc(app.saveIngredientsHandler))
 	mux.Handle("POST /api/push/{id}", http.HandlerFunc(app.pushHandler))
 	mux.Handle("GET /scan/{id}", http.HandlerFunc(app.scanHandler))
 	mux.Handle("GET /recipes/{id}/qr", http.HandlerFunc(app.qrPageHandler))

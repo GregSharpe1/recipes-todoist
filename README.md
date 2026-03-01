@@ -5,7 +5,7 @@ A standalone Go web app for saving recipes (with uploaded photos) and pushing in
 Features:
 - Create recipes from a web form (`name`, `photo`, `ingredients`).
 - Use structured ingredient fields with optional measurements (for example `Chicken` + `500g`).
-- Edit existing recipes by adding/removing ingredients from each recipe card.
+- Edit existing recipes from an Edit modal (add, update, and remove ingredients).
 - Choose ingredients at push time from a popup (all selected by default).
 - Persist recipes in PostgreSQL.
 - Store uploaded photos in `uploads/`.
@@ -122,7 +122,9 @@ If validation fails, the app exits early with a clear error.
 - `GET /` dashboard + create form
 - `POST /api/recipes` create recipe (multipart upload)
 - `POST /api/recipes/{id}/delete` archive recipe (soft delete)
+- `POST /api/recipes/{id}/ingredients/save` replace ingredient list for a recipe (used by Edit modal Save Changes)
 - `POST /api/recipes/{id}/ingredients/add` add one ingredient to recipe
+- `POST /api/recipes/{id}/ingredients/update` update one ingredient by index
 - `POST /api/recipes/{id}/ingredients/remove` remove one ingredient by index
 - `POST /api/push/{id}` push recipe ingredients to Todoist
 - `GET /scan/{id}` mobile-friendly push endpoint for QR scans

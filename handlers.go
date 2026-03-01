@@ -41,6 +41,8 @@ type recipeCard struct {
 	DeletePath           string
 	AddIngredientPath    string
 	RemoveIngredientPath string
+	UpdateIngredientPath string
+	SaveIngredientsPath  string
 }
 
 type indexData struct {
@@ -82,6 +84,8 @@ func (a *App) indexHandler(w http.ResponseWriter, r *http.Request) {
 			DeletePath:           "/api/recipes/" + recipe.ID + "/delete",
 			AddIngredientPath:    "/api/recipes/" + recipe.ID + "/ingredients/add",
 			RemoveIngredientPath: "/api/recipes/" + recipe.ID + "/ingredients/remove",
+			UpdateIngredientPath: "/api/recipes/" + recipe.ID + "/ingredients/update",
+			SaveIngredientsPath:  "/api/recipes/" + recipe.ID + "/ingredients/save",
 		})
 	}
 
@@ -254,6 +258,74 @@ func (a *App) removeIngredientHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.redirectNotice(w, r, "ingredient removed")
+}
+
+func (a *App) updateIngredientHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.redirectError(w, r, "invalid ingredient form")
+		return
+	}
+
+	rawIndex := strings.TrimSpace(r.FormValue("ingredient_idx"))
+	idx, err := strconv.Atoi(rawIndex)
+	if err != nil {
+		a.redirectError(w, r, "invalid ingredient")
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("ingredient_name"))
+	measurement := strings.TrimSpace(r.FormValue("ingredient_measurement"))
+	if name == "" {
+		a.redirectError(w, r, "ingredient is required")
+		return
+	}
+
+	ingredient := name
+	if measurement != "" {
+		ingredient += " " + measurement
+	}
+
+	updated, err := a.updateIngredientInRecipe(r.Context(), recipeID, idx, ingredient)
+	if err != nil {
+		a.redirectError(w, r, "failed to update ingredient")
+		return
+	}
+	if !updated {
+		a.redirectError(w, r, "ingredient not found")
+		return
+	}
+
+	a.redirectNotice(w, r, "ingredient updated")
+}
+
+func (a *App) saveIngredientsHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.redirectError(w, r, "invalid ingredient form")
+		return
+	}
+
+	ingredients := parseIngredientTextFields(r.Form["ingredient_text[]"])
+	if len(ingredients) == 0 {
+		a.redirectError(w, r, "at least one ingredient is required")
+		return
+	}
+
+	if err := a.updateRecipeIngredients(r.Context(), recipeID, ingredients); err != nil {
+		a.redirectError(w, r, "failed to save ingredients")
+		return
+	}
+
+	a.redirectNotice(w, r, "recipe ingredients saved")
 }
 
 func (a *App) scanHandler(w http.ResponseWriter, r *http.Request) {
@@ -647,6 +719,28 @@ func (a *App) removeIngredientFromRecipe(ctx context.Context, id string, idx int
 	return true, nil
 }
 
+func (a *App) updateIngredientInRecipe(ctx context.Context, id string, idx int, ingredient string) (bool, error) {
+	recipe, err := a.getRecipeByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if idx < 0 || idx >= len(recipe.Ingredients) {
+		return false, nil
+	}
+
+	ingredient = strings.TrimSpace(ingredient)
+	if ingredient == "" {
+		return false, nil
+	}
+
+	ingredients := append([]string{}, recipe.Ingredients...)
+	ingredients[idx] = ingredient
+	if err := a.updateRecipeIngredients(ctx, id, ingredients); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (a *App) updateRecipeIngredients(ctx context.Context, id string, ingredients []string) error {
 	rawIngredients, err := json.Marshal(normalizeIngredientStrings(ingredients))
 	if err != nil {
@@ -797,6 +891,18 @@ func normalizeIngredientStrings(ingredients []string) []string {
 	out := make([]string, 0, len(ingredients))
 	for _, ingredient := range ingredients {
 		text := strings.TrimSpace(ingredient)
+		if text == "" {
+			continue
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
+func parseIngredientTextFields(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		text := strings.TrimSpace(value)
 		if text == "" {
 			continue
 		}

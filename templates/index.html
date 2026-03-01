@@ -240,6 +240,31 @@
       gap: 0.5rem;
       color: #374151;
     }
+    .ingredient-edit-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .ingredient-edit-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .ingredient-edit-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0;
+    }
+    .btn-small {
+      padding: 0.5rem 0.75rem;
+      min-width: 84px;
+    }
     .modal-actions {
       margin-top: 1rem;
       display: flex;
@@ -303,7 +328,6 @@
         <img class="recipe-photo" src="{{.ImagePath}}" alt="{{.Name}}">
         {{end}}
         <div class="card-body">
-          {{$recipe := .}}
           <h3>{{.Name}}</h3>
           <div class="card-actions">
             <button type="button" class="open-modal" data-modal-id="push-modal-{{.ID}}">Add to Todoist</button>
@@ -339,28 +363,25 @@
       <div class="modal" id="edit-modal-{{.ID}}" hidden>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title-{{.ID}}">
           <h4 class="modal-title" id="edit-modal-title-{{.ID}}">Edit Ingredients - {{.Name}}</h4>
-          <ul class="checklist">
-            {{range $idx, $ingredient := .Ingredients}}
-            <li class="check-row">
-              <span>{{$ingredient}}</span>
-              <form method="post" action="{{$recipe.RemoveIngredientPath}}">
-                <input type="hidden" name="ingredient_idx" value="{{$idx}}">
-                <button class="secondary" type="submit">Remove</button>
-              </form>
-            </li>
-            {{else}}
-            <li class="check-row">No ingredients yet.</li>
-            {{end}}
-          </ul>
-          <hr class="modal-divider">
-          <form class="ingredient-add" method="post" action="{{.AddIngredientPath}}">
-            <input type="text" name="ingredient_name" placeholder="Ingredient" required>
-            <input type="text" name="ingredient_measurement" placeholder="Measurement">
-            <button class="secondary" type="submit">Add</button>
+          <form class="edit-ingredients-form" method="post" action="{{.SaveIngredientsPath}}">
+            <ul class="ingredient-edit-list" data-edit-list>
+              {{range .Ingredients}}
+              <li class="ingredient-edit-item">
+                <div class="ingredient-edit-row">
+                  <input type="text" name="ingredient_text[]" value="{{.}}" required>
+                  <button class="secondary btn-small edit-row-remove" type="button">Remove</button>
+                </div>
+              </li>
+              {{end}}
+            </ul>
+            <div class="modal-actions" style="justify-content: flex-start;">
+              <button type="button" class="secondary edit-row-add">Add Ingredient</button>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="secondary close-modal" data-modal-id="edit-modal-{{.ID}}">Cancel</button>
+              <button type="submit">Save Changes</button>
+            </div>
           </form>
-          <div class="modal-actions">
-            <button type="button" class="secondary close-modal" data-modal-id="edit-modal-{{.ID}}">Close</button>
-          </div>
         </div>
       </div>
       {{else}}
@@ -428,6 +449,77 @@
       });
 
       refreshRemovals();
+
+      const createEditIngredientRow = function (value) {
+        const li = document.createElement('li');
+        li.className = 'ingredient-edit-item';
+        const row = document.createElement('div');
+        row.className = 'ingredient-edit-row';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.name = 'ingredient_text[]';
+        input.required = true;
+        input.value = value || '';
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'secondary btn-small edit-row-remove';
+        removeBtn.textContent = 'Remove';
+        row.appendChild(input);
+        row.appendChild(removeBtn);
+        li.appendChild(row);
+        return li;
+      };
+
+      const refreshEditRows = function (list) {
+        const rows = list.querySelectorAll('.ingredient-edit-item');
+        rows.forEach(function (row, index) {
+          const removeBtn = row.querySelector('.edit-row-remove');
+          const input = row.querySelector('input[name="ingredient_text[]"]');
+          if (removeBtn) {
+            removeBtn.disabled = rows.length === 1;
+            removeBtn.style.opacity = rows.length === 1 ? '0.5' : '1';
+            removeBtn.style.cursor = rows.length === 1 ? 'not-allowed' : 'pointer';
+          }
+          if (input) {
+            input.required = index === 0;
+          }
+        });
+      };
+
+      document.querySelectorAll('.edit-ingredients-form').forEach(function (form) {
+        const list = form.querySelector('[data-edit-list]');
+        const addRowButton = form.querySelector('.edit-row-add');
+        if (!list || !addRowButton) {
+          return;
+        }
+
+        if (list.querySelectorAll('.ingredient-edit-item').length === 0) {
+          list.appendChild(createEditIngredientRow(''));
+        }
+
+        addRowButton.addEventListener('click', function () {
+          list.appendChild(createEditIngredientRow(''));
+          refreshEditRows(list);
+        });
+
+        list.addEventListener('click', function (event) {
+          const target = event.target;
+          if (!(target instanceof HTMLElement) || !target.classList.contains('edit-row-remove')) {
+            return;
+          }
+          const row = target.closest('.ingredient-edit-item');
+          if (!row) {
+            return;
+          }
+          if (list.querySelectorAll('.ingredient-edit-item').length === 1) {
+            return;
+          }
+          row.remove();
+          refreshEditRows(list);
+        });
+
+        refreshEditRows(list);
+      });
 
       document.querySelectorAll('.open-modal').forEach(function (button) {
         button.addEventListener('click', function () {
