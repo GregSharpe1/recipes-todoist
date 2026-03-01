@@ -16,6 +16,7 @@ RUN addgroup -S app && adduser -S app -G app
 
 COPY --from=builder /out/todoist-recipes /app/todoist-recipes
 COPY templates /app/templates
+COPY static /app/static
 
 RUN mkdir -p /app/uploads && chown -R app:app /app
 

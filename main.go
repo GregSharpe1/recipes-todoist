@@ -64,6 +64,7 @@ func main() {
 	mux.Handle("GET /scan/{id}", http.HandlerFunc(app.scanHandler))
 	mux.Handle("GET /recipes/{id}/qr", http.HandlerFunc(app.qrPageHandler))
 	mux.Handle("GET /qr/{id}", http.HandlerFunc(app.qrHandler))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(app.uploadDir))))
 
 	server := &http.Server{
