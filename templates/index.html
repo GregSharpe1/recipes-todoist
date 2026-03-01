@@ -91,6 +91,23 @@
       display: flex;
       justify-content: flex-end;
     }
+    .ingredient-builder {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .ingredient-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .inline-actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-start;
+      margin-top: 0.25rem;
+    }
     button, .link-btn {
       border: 0;
       border-radius: 10px;
@@ -106,6 +123,25 @@
     }
     button:hover, .link-btn:hover {
       background: var(--primary-hover);
+    }
+    button.secondary {
+      background: #ffffff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    button.secondary:hover {
+      background: #f3f4f6;
+    }
+    button.row-remove {
+      background: #fff;
+      color: var(--danger);
+      border: 1px solid #fecaca;
+      border-radius: 10px;
+      padding: 0.55rem 0.65rem;
+      cursor: pointer;
+    }
+    button.row-remove:hover {
+      background: #fee2e2;
     }
     .recipes {
       margin-top: 1rem;
@@ -183,8 +219,18 @@
             <input id="photo" name="photo" type="file" accept="image/*">
           </div>
           <div class="field full">
-            <label for="ingredients">Ingredients (one per line or comma separated)</label>
-            <textarea id="ingredients" name="ingredients" required></textarea>
+            <label>Ingredients + measurement</label>
+            <div id="ingredient-builder" class="ingredient-builder">
+              <div class="ingredient-row">
+                <input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>
+                <input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">
+                <button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>
+              </div>
+            </div>
+            <div class="inline-actions">
+              <button id="add-ingredient" class="secondary" type="button">Add ingredient</button>
+            </div>
+            <textarea id="ingredients" name="ingredients" hidden></textarea>
           </div>
         </div>
         <div class="actions">
@@ -207,9 +253,12 @@
           <img class="qr" src="{{.QRPath}}" alt="QR for {{.Name}}">
           <div class="card-actions">
             <form method="post" action="{{.PushPath}}">
-              <button type="submit">Push to Todoist</button>
+              <button type="submit">Add to Todoist</button>
             </form>
-            <a class="link-btn" href="{{.QRPath}}" target="_blank" rel="noopener">Open QR</a>
+            <a class="link-btn" href="{{.QRPagePath}}" target="_blank" rel="noopener">Show QR Code</a>
+            <form method="post" action="{{.DeletePath}}" onsubmit="return confirm('Are you sure you want to remove this recipe?');">
+              <button class="secondary" type="submit">Remove</button>
+            </form>
           </div>
         </div>
       </article>
@@ -218,5 +267,67 @@
       {{end}}
     </section>
   </div>
+  <script>
+    (function () {
+      const builder = document.getElementById('ingredient-builder');
+      const addButton = document.getElementById('add-ingredient');
+      if (!builder || !addButton) {
+        return;
+      }
+
+      const createRow = function () {
+        const row = document.createElement('div');
+        row.className = 'ingredient-row';
+        row.innerHTML = '' +
+          '<input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>' +
+          '<input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">' +
+          '<button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>';
+        return row;
+      };
+
+      const refreshRemovals = function () {
+        const rows = builder.querySelectorAll('.ingredient-row');
+        rows.forEach(function (row, index) {
+          const removeButton = row.querySelector('.row-remove');
+          if (!removeButton) {
+            return;
+          }
+          removeButton.disabled = rows.length === 1;
+          removeButton.style.opacity = rows.length === 1 ? '0.5' : '1';
+          removeButton.style.cursor = rows.length === 1 ? 'not-allowed' : 'pointer';
+          const nameInput = row.querySelector('input[name="ingredient_name[]"]');
+          if (nameInput) {
+            nameInput.required = index === 0;
+          }
+        });
+      };
+
+      addButton.addEventListener('click', function () {
+        builder.appendChild(createRow());
+        refreshRemovals();
+      });
+
+      builder.addEventListener('click', function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        if (!target.classList.contains('row-remove')) {
+          return;
+        }
+        const row = target.closest('.ingredient-row');
+        if (!row) {
+          return;
+        }
+        if (builder.querySelectorAll('.ingredient-row').length === 1) {
+          return;
+        }
+        row.remove();
+        refreshRemovals();
+      });
+
+      refreshRemovals();
+    })();
+  </script>
 </body>
 </html>

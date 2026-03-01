@@ -35,7 +35,9 @@ type recipeCard struct {
 	ImagePath   string
 	Ingredients []string
 	QRPath      string
+	QRPagePath  string
 	PushPath    string
+	DeletePath  string
 }
 
 type indexData struct {
@@ -72,7 +74,9 @@ func (a *App) indexHandler(w http.ResponseWriter, r *http.Request) {
 			ImagePath:   recipe.ImagePath,
 			Ingredients: recipe.Ingredients,
 			QRPath:      "/qr/" + recipe.ID,
+			QRPagePath:  "/recipes/" + recipe.ID + "/qr",
 			PushPath:    "/api/push/" + recipe.ID,
+			DeletePath:  "/api/recipes/" + recipe.ID + "/delete",
 		})
 	}
 
@@ -88,7 +92,7 @@ func (a *App) createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
-	ingredients := parseIngredients(r.FormValue("ingredients"))
+	ingredients := parseIngredientFields(r)
 	if name == "" {
 		a.redirectError(w, r, "recipe name is required")
 		return
@@ -154,6 +158,26 @@ func (a *App) pushHandler(w http.ResponseWriter, r *http.Request) {
 	a.redirectNotice(w, r, "ingredients sent to Todoist")
 }
 
+func (a *App) deleteRecipeHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	deleted, err := a.softDeleteRecipeByID(r.Context(), recipeID)
+	if err != nil {
+		a.redirectError(w, r, "failed to delete recipe")
+		return
+	}
+	if !deleted {
+		a.redirectError(w, r, "recipe not found")
+		return
+	}
+
+	a.redirectNotice(w, r, "recipe archived")
+}
+
 func (a *App) scanHandler(w http.ResponseWriter, r *http.Request) {
 	recipeID := r.PathValue("id")
 	if recipeID == "" {
@@ -197,6 +221,27 @@ func (a *App) qrHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "image/png")
 	_, _ = w.Write(png)
+}
+
+func (a *App) qrPageHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	recipe, err := a.getRecipeByID(r.Context(), recipeID)
+	if err != nil {
+		if err.Error() == "recipe not found" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load recipe", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = fmt.Fprintf(w, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>QR - %s</title><style>body{font-family:Segoe UI,Helvetica Neue,sans-serif;margin:0;padding:24px;background:#f7faf9;color:#1f2937}.wrap{max-width:640px;margin:0 auto;background:#fff;border:1px solid #d1d5db;border-radius:14px;padding:20px;box-shadow:0 10px 24px rgba(0,0,0,.06)}h1{margin:0 0 14px;font-size:1.6rem}.meta{color:#4b5563;margin-bottom:14px}.qr{display:block;width:280px;height:280px;margin:14px auto;border:1px solid #e5e7eb;border-radius:10px}.actions{display:flex;gap:10px;justify-content:center;margin-top:14px}.btn{display:inline-block;text-decoration:none;background:#0f766e;color:#fff;padding:10px 14px;border-radius:10px}button{background:#fff;border:1px solid #d1d5db;padding:10px 14px;border-radius:10px;cursor:pointer}@media print{body{background:#fff;padding:0}.wrap{border:0;box-shadow:none;max-width:none}.actions{display:none}}</style></head><body><main class=\"wrap\"><h1>%s</h1><p class=\"meta\">Scan to add ingredients to Todoist</p><img class=\"qr\" src=\"/qr/%s\" alt=\"QR for %s\"><div class=\"actions\"><a class=\"btn\" href=\"/\">Back to recipes</a><button type=\"button\" onclick=\"window.print()\">Print</button></div></main></body></html>", template.HTMLEscapeString(recipe.Name), template.HTMLEscapeString(recipe.Name), template.HTMLEscapeString(recipeID), template.HTMLEscapeString(recipe.Name))
 }
 
 func (a *App) PushToTodoist(ctx context.Context, recipeID string) error {
@@ -338,9 +383,17 @@ CREATE TABLE IF NOT EXISTS recipes (
 	name TEXT NOT NULL,
 	image_path TEXT NOT NULL,
 	ingredients_json JSONB NOT NULL,
+	deleted_at TIMESTAMPTZ,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );`
-	_, err := db.ExecContext(ctx, q)
+	if _, err := db.ExecContext(ctx, q); err != nil {
+		return err
+	}
+
+	const qAlter = `
+ALTER TABLE recipes
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`
+	_, err := db.ExecContext(ctx, qAlter)
 	return err
 }
 
@@ -348,6 +401,7 @@ func (a *App) listRecipes(ctx context.Context) ([]Recipe, error) {
 	const q = `
 SELECT id, name, image_path, ingredients_json
 FROM recipes
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC, id DESC`
 
 	rows, err := a.db.QueryContext(ctx, q)
@@ -376,7 +430,7 @@ ORDER BY created_at DESC, id DESC`
 }
 
 func (a *App) recipeExists(ctx context.Context, id string) (bool, error) {
-	const q = `SELECT 1 FROM recipes WHERE id = $1 LIMIT 1`
+	const q = `SELECT 1 FROM recipes WHERE id = $1 AND deleted_at IS NULL LIMIT 1`
 	var exists int
 	err := a.db.QueryRowContext(ctx, q, id).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -392,7 +446,7 @@ func (a *App) getRecipeByID(ctx context.Context, id string) (Recipe, error) {
 	const q = `
 SELECT id, name, image_path, ingredients_json
 FROM recipes
-WHERE id = $1`
+WHERE id = $1 AND deleted_at IS NULL`
 
 	var recipe Recipe
 	var rawIngredients []byte
@@ -422,6 +476,24 @@ VALUES ($1, $2, $3, $4::jsonb)
 ON CONFLICT (id) DO NOTHING`
 
 	result, err := a.db.ExecContext(ctx, q, recipe.ID, recipe.Name, recipe.ImagePath, rawIngredients)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return rows == 1, nil
+}
+
+func (a *App) softDeleteRecipeByID(ctx context.Context, id string) (bool, error) {
+	const q = `
+UPDATE recipes
+SET deleted_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL`
+
+	result, err := a.db.ExecContext(ctx, q, id)
 	if err != nil {
 		return false, err
 	}
@@ -487,6 +559,44 @@ func parseIngredients(raw string) []string {
 			continue
 		}
 		out = append(out, item)
+	}
+	return out
+}
+
+func parseIngredientFields(r *http.Request) []string {
+	names := r.Form["ingredient_name[]"]
+	measurements := r.Form["ingredient_measurement[]"]
+	if len(names) == 0 && len(measurements) == 0 {
+		return parseIngredients(r.FormValue("ingredients"))
+	}
+
+	maxLen := len(names)
+	if len(measurements) > maxLen {
+		maxLen = len(measurements)
+	}
+
+	out := make([]string, 0, maxLen)
+	for i := 0; i < maxLen; i++ {
+		name := ""
+		measurement := ""
+		if i < len(names) {
+			name = strings.TrimSpace(names[i])
+		}
+		if i < len(measurements) {
+			measurement = strings.TrimSpace(measurements[i])
+		}
+		if name == "" {
+			continue
+		}
+		item := name
+		if measurement != "" {
+			item += " " + measurement
+		}
+		out = append(out, item)
+	}
+
+	if len(out) == 0 {
+		return parseIngredients(r.FormValue("ingredients"))
 	}
 	return out
 }

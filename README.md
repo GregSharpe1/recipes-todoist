@@ -4,10 +4,12 @@ A standalone Go web app for saving recipes (with uploaded photos) and pushing in
 
 Features:
 - Create recipes from a web form (`name`, `photo`, `ingredients`).
+- Use structured ingredient fields with optional measurements (for example `Chicken` + `500g`).
 - Persist recipes in PostgreSQL.
 - Store uploaded photos in `uploads/`.
 - Push ingredients to Todoist from the UI or via QR scan.
 - Generate QR codes per recipe (`/qr/{id}`) that open `/scan/{id}`.
+- Archive recipes from the dashboard with a confirmation prompt (soft delete).
 
 ## Requirements
 
@@ -117,8 +119,10 @@ If validation fails, the app exits early with a clear error.
 
 - `GET /` dashboard + create form
 - `POST /api/recipes` create recipe (multipart upload)
+- `POST /api/recipes/{id}/delete` archive recipe (soft delete)
 - `POST /api/push/{id}` push recipe ingredients to Todoist
 - `GET /scan/{id}` mobile-friendly push endpoint for QR scans
+- `GET /recipes/{id}/qr` printable QR page with recipe name
 - `GET /qr/{id}` QR code PNG for recipe
 - `GET /uploads/{file}` uploaded image files
 
@@ -134,6 +138,26 @@ If validation fails, the app exits early with a clear error.
 - Recipes are stored in PostgreSQL table `recipes`.
 - Uploaded images are stored in `uploads/`.
 - Runtime configuration is read directly from process environment variables.
+
+Soft-delete behavior:
+- Deleting from the UI sets `recipes.deleted_at` and hides the recipe from the dashboard.
+- Archived recipes are retained in PostgreSQL for recovery.
+- Image files are not removed during archive, so restored recipes keep their photos.
+
+Recover archived recipes manually:
+
+```sql
+-- Find archived recipes
+SELECT id, name, deleted_at
+FROM recipes
+WHERE deleted_at IS NOT NULL
+ORDER BY deleted_at DESC;
+
+-- Restore one recipe
+UPDATE recipes
+SET deleted_at = NULL
+WHERE id = 'your_recipe_id';
+```
 
 ## Build Binary
 
@@ -222,4 +246,3 @@ make docker-stop
   - Verify token validity and internet access from the machine running the app.
 - QR scan cannot connect
   - Fix `--base-url`/`BASE_URL` so it points to a reachable URL from your phone.
->>>>>>> aaa511d (Initial commit)
