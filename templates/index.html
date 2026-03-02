@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Recipe Dashboard</title>
+  <title>Shopping List Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <style>
     :root {
@@ -80,6 +80,31 @@
       color: var(--muted);
       box-shadow: 0 8px 18px rgba(31, 41, 51, 0.06);
       white-space: nowrap;
+    }
+
+    .tabs {
+	  display: inline-flex;
+	  gap: 0.45rem;
+	  margin-bottom: 0.9rem;
+    }
+
+    .tab-link {
+	  display: inline-flex;
+	  align-items: center;
+	  justify-content: center;
+	  text-decoration: none;
+	  padding: 0.5rem 0.85rem;
+	  border-radius: 999px;
+	  border: 1px solid #d6d0c4;
+	  background: #fff;
+	  color: var(--muted);
+	  font-weight: 700;
+    }
+
+    .tab-link.active {
+	  background: linear-gradient(180deg, #0ea5a2, var(--primary));
+	  color: #fff;
+	  border-color: #0b7f75;
     }
 
     .notice, .error {
@@ -517,16 +542,22 @@
   <div class="container">
     <header class="page-head">
       <div>
-        <h1>Recipe Dashboard</h1>
+        <h1>Shopping List Dashboard</h1>
         <p class="lead">Create, update, and push ingredients to Todoist with one clean workflow.</p>
       </div>
-      <div class="pill">{{len .Recipes}} Recipes</div>
+      <div class="pill">{{if eq .ActiveTab "regular"}}{{len .RegularLists}} Regular Lists{{else}}{{len .Recipes}} Recipes{{end}}</div>
     </header>
 
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}
     {{range .Warnings}}<div class="warning">{{.}}</div>{{end}}
 
+    <nav class="tabs" aria-label="Dashboard Sections">
+      <a class="tab-link {{if eq .ActiveTab "recipes"}}active{{end}}" href="/?tab=recipes">Recipes</a>
+      <a class="tab-link {{if eq .ActiveTab "regular"}}active{{end}}" href="/?tab=regular">Regular Items</a>
+    </nav>
+
+    {{if eq .ActiveTab "recipes"}}
     <section class="panel">
       <h2>Import From Gousto / BBC Good Food</h2>
       <form class="import-form" method="post" action="/api/import">
@@ -654,7 +685,7 @@
             </div>
             {{end}}
           </section>
-          <form class="edit-ingredients-form" method="post" action="{{.SaveIngredientsPath}}">
+          <form class="edit-ingredients-form" data-edit-list-form data-input-name="ingredient_text[]" method="post" action="{{.SaveIngredientsPath}}">
             <ul class="ingredient-edit-list" data-edit-list>
               {{range .Ingredients}}
               <li class="ingredient-edit-item">
@@ -679,26 +710,117 @@
       <article class="panel empty">No recipes yet. Add your first one above.</article>
       {{end}}
     </section>
+    {{else}}
+    <section class="panel">
+      <h2>Add Regular List</h2>
+      <form method="post" action="/api/regular-lists?tab=regular">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="regular-name">Name</label>
+            <input id="regular-name" name="name" type="text" placeholder="Weekly Staples" required>
+          </div>
+          <div class="field full">
+            <label>Items + measurement</label>
+            <div id="regular-builder" class="ingredient-builder">
+              <div class="ingredient-row">
+                <input name="regular_ingredient_name[]" type="text" placeholder="Item (e.g. Bananas)" required>
+                <input name="regular_ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 6)">
+                <button class="row-remove" type="button" aria-label="Remove item">Remove</button>
+              </div>
+            </div>
+            <div class="inline-actions">
+              <button id="add-regular-item" class="secondary" type="button">Add item</button>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">Save Regular List</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="recipes">
+      {{range .RegularLists}}
+      <article class="card">
+        <div class="card-body">
+          <div class="title-row">
+            <h3>{{.Name}}</h3>
+          </div>
+          <div class="card-actions">
+            <button type="button" class="open-modal" data-modal-id="regular-push-modal-{{.ID}}">Add to Todoist</button>
+            <button type="button" class="secondary open-modal" data-modal-id="regular-edit-modal-{{.ID}}">Edit</button>
+            <form method="post" action="{{.DeletePath}}?tab=regular" onsubmit="return confirm('Are you sure you want to remove this regular list?');">
+              <button class="secondary" type="submit">Remove</button>
+            </form>
+          </div>
+        </div>
+      </article>
+
+      <div class="modal" id="regular-push-modal-{{.ID}}" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="regular-push-title-{{.ID}}">
+          <h4 class="modal-title" id="regular-push-title-{{.ID}}">Add Regular Items to Todoist</h4>
+          <form method="post" action="{{.PushPath}}?tab=regular">
+            <input type="hidden" name="selection_mode" value="1">
+            {{$regularID := .ID}}
+            <ul class="checklist">
+              {{range $idx, $item := .Items}}
+              <li class="check-row">
+                <input id="regular-push-{{$regularID}}-{{$idx}}" type="checkbox" name="item_idx[]" value="{{$idx}}" checked>
+                <label for="regular-push-{{$regularID}}-{{$idx}}">{{$item}}</label>
+              </li>
+              {{end}}
+            </ul>
+            <div class="modal-actions">
+              <button type="button" class="secondary close-modal" data-modal-id="regular-push-modal-{{.ID}}">Cancel</button>
+              <button type="submit">Add Selected to Todoist</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="modal" id="regular-edit-modal-{{.ID}}" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="regular-edit-title-{{.ID}}">
+          <h4 class="modal-title" id="regular-edit-title-{{.ID}}">Edit Regular Items - {{.Name}}</h4>
+          <form class="edit-ingredients-form" data-edit-list-form data-input-name="item_text[]" method="post" action="{{.SaveItemsPath}}?tab=regular">
+            <ul class="ingredient-edit-list" data-edit-list>
+              {{range .Items}}
+              <li class="ingredient-edit-item">
+                <div class="ingredient-edit-row">
+                  <input type="text" name="item_text[]" value="{{.}}" required>
+                  <button class="secondary btn-small edit-row-remove" type="button">Remove</button>
+                </div>
+              </li>
+              {{end}}
+            </ul>
+            <div class="modal-actions left">
+              <button type="button" class="secondary edit-row-add">Add Item</button>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="secondary close-modal" data-modal-id="regular-edit-modal-{{.ID}}">Cancel</button>
+              <button type="submit">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {{else}}
+      <article class="panel empty">No regular lists yet. Add your first one above.</article>
+      {{end}}
+    </section>
+    {{end}}
   </div>
   <script>
     (function () {
-      const builder = document.getElementById('ingredient-builder');
-      const addButton = document.getElementById('add-ingredient');
-      if (!builder || !addButton) {
-        return;
-      }
-
-      const createRow = function () {
+      const createBuilderRow = function (nameField, measurementField, namePlaceholder, measurementPlaceholder) {
         const row = document.createElement('div');
         row.className = 'ingredient-row';
         row.innerHTML = '' +
-          '<input name="ingredient_name[]" type="text" placeholder="Ingredient (e.g. Chicken)" required>' +
-          '<input name="ingredient_measurement[]" type="text" placeholder="Measurement (e.g. 500g)">' +
+          '<input name="' + nameField + '" type="text" placeholder="' + namePlaceholder + '" required>' +
+          '<input name="' + measurementField + '" type="text" placeholder="' + measurementPlaceholder + '">' +
           '<button class="row-remove" type="button" aria-label="Remove ingredient">Remove</button>';
         return row;
       };
 
-      const refreshRemovals = function () {
+      const refreshRemovals = function (builder, nameField) {
         const rows = builder.querySelectorAll('.ingredient-row');
         rows.forEach(function (row, index) {
           const removeButton = row.querySelector('.row-remove');
@@ -708,47 +830,58 @@
           removeButton.disabled = rows.length === 1;
           removeButton.style.opacity = rows.length === 1 ? '0.5' : '1';
           removeButton.style.cursor = rows.length === 1 ? 'not-allowed' : 'pointer';
-          const nameInput = row.querySelector('input[name="ingredient_name[]"]');
+          const nameInput = row.querySelector('input[name="' + nameField + '"]');
           if (nameInput) {
             nameInput.required = index === 0;
           }
         });
       };
 
-      addButton.addEventListener('click', function () {
-        builder.appendChild(createRow());
-        refreshRemovals();
-      });
+      const initBuilder = function (builderId, addButtonId, nameField, measurementField, namePlaceholder, measurementPlaceholder) {
+        const builder = document.getElementById(builderId);
+        const addButton = document.getElementById(addButtonId);
+        if (!builder || !addButton) {
+          return;
+        }
 
-      builder.addEventListener('click', function (event) {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) {
-          return;
-        }
-        if (!target.classList.contains('row-remove')) {
-          return;
-        }
-        const row = target.closest('.ingredient-row');
-        if (!row) {
-          return;
-        }
-        if (builder.querySelectorAll('.ingredient-row').length === 1) {
-          return;
-        }
-        row.remove();
-        refreshRemovals();
-      });
+        addButton.addEventListener('click', function () {
+          builder.appendChild(createBuilderRow(nameField, measurementField, namePlaceholder, measurementPlaceholder));
+          refreshRemovals(builder, nameField);
+        });
 
-      refreshRemovals();
+        builder.addEventListener('click', function (event) {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+          if (!target.classList.contains('row-remove')) {
+            return;
+          }
+          const row = target.closest('.ingredient-row');
+          if (!row) {
+            return;
+          }
+          if (builder.querySelectorAll('.ingredient-row').length === 1) {
+            return;
+          }
+          row.remove();
+          refreshRemovals(builder, nameField);
+        });
 
-      const createEditIngredientRow = function (value) {
+        refreshRemovals(builder, nameField);
+      };
+
+      initBuilder('ingredient-builder', 'add-ingredient', 'ingredient_name[]', 'ingredient_measurement[]', 'Ingredient (e.g. Chicken)', 'Measurement (e.g. 500g)');
+      initBuilder('regular-builder', 'add-regular-item', 'regular_ingredient_name[]', 'regular_ingredient_measurement[]', 'Item (e.g. Bananas)', 'Measurement (e.g. 6)');
+
+      const createEditIngredientRow = function (value, inputName) {
         const li = document.createElement('li');
         li.className = 'ingredient-edit-item';
         const row = document.createElement('div');
         row.className = 'ingredient-edit-row';
         const input = document.createElement('input');
         input.type = 'text';
-        input.name = 'ingredient_text[]';
+        input.name = inputName;
         input.required = true;
         input.value = value || '';
         const removeBtn = document.createElement('button');
@@ -761,11 +894,11 @@
         return li;
       };
 
-      const refreshEditRows = function (list) {
+      const refreshEditRows = function (list, inputName) {
         const rows = list.querySelectorAll('.ingredient-edit-item');
         rows.forEach(function (row, index) {
           const removeBtn = row.querySelector('.edit-row-remove');
-          const input = row.querySelector('input[name="ingredient_text[]"]');
+          const input = row.querySelector('input[name="' + inputName + '"]');
           if (removeBtn) {
             removeBtn.disabled = rows.length === 1;
             removeBtn.style.opacity = rows.length === 1 ? '0.5' : '1';
@@ -777,20 +910,21 @@
         });
       };
 
-      document.querySelectorAll('.edit-ingredients-form').forEach(function (form) {
+      document.querySelectorAll('[data-edit-list-form]').forEach(function (form) {
         const list = form.querySelector('[data-edit-list]');
         const addRowButton = form.querySelector('.edit-row-add');
+        const inputName = form.getAttribute('data-input-name') || 'ingredient_text[]';
         if (!list || !addRowButton) {
           return;
         }
 
         if (list.querySelectorAll('.ingredient-edit-item').length === 0) {
-          list.appendChild(createEditIngredientRow(''));
+          list.appendChild(createEditIngredientRow('', inputName));
         }
 
         addRowButton.addEventListener('click', function () {
-          list.appendChild(createEditIngredientRow(''));
-          refreshEditRows(list);
+          list.appendChild(createEditIngredientRow('', inputName));
+          refreshEditRows(list, inputName);
         });
 
         list.addEventListener('click', function (event) {
@@ -806,10 +940,10 @@
             return;
           }
           row.remove();
-          refreshEditRows(list);
+          refreshEditRows(list, inputName);
         });
 
-        refreshEditRows(list);
+        refreshEditRows(list, inputName);
       });
 
       document.querySelectorAll('.open-modal').forEach(function (button) {
