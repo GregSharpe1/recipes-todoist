@@ -15,7 +15,7 @@ docker-build:
 	docker build -t $(IMAGE) .
 
 docker-run:
-	docker run --rm -p $(PORT):8080 --env DATABASE_URL --env TODOIST_API_TOKEN --env TODOIST_PROJECT_ID --env TODOIST_PROJECT --env TODOIST_API_BASE_URL --env BASE_URL --env LOCAL_IP -v $(CURDIR)/uploads:/app/uploads $(IMAGE)
+	docker run --rm -p $(PORT):8080 --env DATABASE_PATH --env TODOIST_API_TOKEN --env TODOIST_PROJECT_ID --env TODOIST_PROJECT --env TODOIST_API_BASE_URL --env BASE_URL --env LOCAL_IP -v $(CURDIR)/data:/app/data -v $(CURDIR)/uploads:/app/uploads $(IMAGE)
 
 docker-stop:
 	docker ps -q --filter ancestor=$(IMAGE) | xargs -r docker stop
@@ -27,4 +27,4 @@ compose-down:
 	$(COMPOSE) down
 
 compose-logs:
-	$(COMPOSE) logs -f app postgres
+	$(COMPOSE) logs -f app

@@ -1,7 +1,4 @@
-export DATABASE_URL="postgres://user:password@localhost:5432/todoist_recipes?sslmode=disable"
-export POSTGRES_DB="todoist_recipes"
-export POSTGRES_USER="todoist"
-export POSTGRES_PASSWORD="todoist"
+export DATABASE_PATH="data/recipes.db"
 export TODOIST_API_TOKEN=""
 export TODOIST_PROJECT_ID=""
 export TODOIST_API_BASE_URL="https://api.todoist.com/api/v1"

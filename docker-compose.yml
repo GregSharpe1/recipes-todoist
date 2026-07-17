@@ -1,34 +1,14 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: recipes-todoist-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-todoist_recipes}
-      POSTGRES_USER: ${POSTGRES_USER:-todoist}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-todoist}
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-todoist} -d ${POSTGRES_DB:-todoist_recipes}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-
   app:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     container_name: recipes-todoist
-    depends_on:
-      postgres:
-        condition: service_healthy
     ports:
       - "${PORT:-8080}:8080"
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-todoist}:${POSTGRES_PASSWORD:-todoist}@postgres:5432/${POSTGRES_DB:-todoist_recipes}?sslmode=disable
+      DATABASE_PATH: /app/data/recipes.db
       TODOIST_API_TOKEN: ${TODOIST_API_TOKEN:-}
       TODOIST_PROJECT_ID: ${TODOIST_PROJECT_ID:-}
       TODOIST_PROJECT: ${TODOIST_PROJECT:-}
@@ -36,8 +16,9 @@ services:
       BASE_URL: ${BASE_URL:-}
       LOCAL_IP: ${LOCAL_IP:-}
     volumes:
+      - data:/app/data
       - uploads_data:/app/uploads
 
 volumes:
-  pg_data:
+  data:
   uploads_data:

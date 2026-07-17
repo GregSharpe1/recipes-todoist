@@ -101,7 +101,7 @@ func (r *Repository) InsertRecipe(ctx context.Context, recipe Recipe) (bool, err
 
 	const q = `
 INSERT INTO recipes (id, name, image_path, source_url, ingredients_json)
-VALUES ($1, $2, $3, $4, $5::jsonb)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (id) DO NOTHING`
 
 	result, err := r.db.ExecContext(ctx, q, recipe.ID, recipe.Name, recipe.ImagePath, recipe.SourceURL, rawIngredients)
@@ -119,7 +119,7 @@ ON CONFLICT (id) DO NOTHING`
 func (r *Repository) SoftDeleteRecipeByID(ctx context.Context, id string) (bool, error) {
 	const q = `
 UPDATE recipes
-SET deleted_at = NOW()
+SET deleted_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND deleted_at IS NULL`
 
 	result, err := r.db.ExecContext(ctx, q, id)
@@ -142,7 +142,7 @@ func (r *Repository) UpdateRecipeIngredients(ctx context.Context, id string, ing
 
 	const q = `
 UPDATE recipes
-SET ingredients_json = $2::jsonb
+SET ingredients_json = $2
 WHERE id = $1 AND deleted_at IS NULL`
 
 	result, err := r.db.ExecContext(ctx, q, id, rawIngredients)
@@ -281,7 +281,7 @@ func (r *Repository) InsertRegularList(ctx context.Context, list RegularList) (b
 
 	const q = `
 INSERT INTO regular_lists (id, name, items_json)
-VALUES ($1, $2, $3::jsonb)
+VALUES ($1, $2, $3)
 ON CONFLICT (id) DO NOTHING`
 
 	result, err := r.db.ExecContext(ctx, q, list.ID, list.Name, rawItems)
@@ -298,7 +298,7 @@ ON CONFLICT (id) DO NOTHING`
 func (r *Repository) SoftDeleteRegularListByID(ctx context.Context, id string) (bool, error) {
 	const q = `
 UPDATE regular_lists
-SET deleted_at = NOW()
+SET deleted_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND deleted_at IS NULL`
 
 	result, err := r.db.ExecContext(ctx, q, id)
@@ -320,7 +320,7 @@ func (r *Repository) UpdateRegularListItems(ctx context.Context, id string, item
 
 	const q = `
 UPDATE regular_lists
-SET items_json = $2::jsonb
+SET items_json = $2
 WHERE id = $1 AND deleted_at IS NULL`
 
 	result, err := r.db.ExecContext(ctx, q, id, rawItems)
