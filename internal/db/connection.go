@@ -3,24 +3,36 @@ package db
 import (
 	"context"
 	"database/sql"
-	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
 )
 
 func OpenFromEnv() (*sql.DB, error) {
-	dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	if dsn == "" {
-		return nil, errors.New("DATABASE_URL is not set")
+	databasePath := strings.TrimSpace(os.Getenv("DATABASE_PATH"))
+	if databasePath == "" {
+		databasePath = "data/recipes.db"
 	}
 
-	db, err := sql.Open("postgres", dsn)
+	if databasePath != ":memory:" && !strings.HasPrefix(databasePath, "file:") {
+		parent := filepath.Dir(databasePath)
+		if parent != "." {
+			if err := os.MkdirAll(parent, 0o755); err != nil {
+				return nil, fmt.Errorf("create database directory: %w", err)
+			}
+		}
+	}
+
+	db, err := sql.Open("sqlite", databasePath)
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -39,25 +51,11 @@ CREATE TABLE IF NOT EXISTS recipes (
 	name TEXT NOT NULL,
 	image_path TEXT NOT NULL,
 	source_url TEXT NOT NULL DEFAULT '',
-	ingredients_json JSONB NOT NULL,
-	deleted_at TIMESTAMPTZ,
-	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	ingredients_json TEXT NOT NULL,
+	deleted_at TEXT,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );`
 	if _, err := db.ExecContext(ctx, q); err != nil {
-		return err
-	}
-
-	const qAlterDeleted = `
-ALTER TABLE recipes
-ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`
-	if _, err := db.ExecContext(ctx, qAlterDeleted); err != nil {
-		return err
-	}
-
-	const qAlterSource = `
-ALTER TABLE recipes
-ADD COLUMN IF NOT EXISTS source_url TEXT NOT NULL DEFAULT '';`
-	if _, err := db.ExecContext(ctx, qAlterSource); err != nil {
 		return err
 	}
 
@@ -65,19 +63,15 @@ ADD COLUMN IF NOT EXISTS source_url TEXT NOT NULL DEFAULT '';`
 CREATE TABLE IF NOT EXISTS regular_lists (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
-	items_json JSONB NOT NULL,
-	deleted_at TIMESTAMPTZ,
-	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	items_json TEXT NOT NULL,
+	deleted_at TEXT,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );`
 	if _, err := db.ExecContext(ctx, qRegular); err != nil {
 		return err
 	}
 
-	const qRegularDeleted = `
-ALTER TABLE regular_lists
-ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`
-	_, err := db.ExecContext(ctx, qRegularDeleted)
-	return err
+	return nil
 }
 
 type Repository struct {

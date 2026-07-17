@@ -11,7 +11,7 @@ Features:
 - Choose ingredients at push time from a popup (all selected by default).
 - Keep the original recipe source URL and open it from each recipe card.
 - Update or remove photos on existing recipes from the Edit modal.
-- Persist recipes in PostgreSQL.
+- Persist recipes in a local SQLite database.
 - Store uploaded photos in `uploads/`.
 - Push ingredients to Todoist from the UI or via QR scan.
 - Generate QR codes per recipe (`/qr/{id}`) that open `/scan/{id}`.
@@ -20,7 +20,6 @@ Features:
 ## Requirements
 
 - Go 1.22+
-- PostgreSQL 13+
 - A Todoist API token (for push actions)
 
 ## Setup
@@ -34,7 +33,7 @@ go mod tidy
 2) Export environment variables in your shell:
 
 ```bash
-export DATABASE_URL="postgres://user:password@postgres:5432/todoist_recipes?sslmode=disable"
+export DATABASE_PATH="data/recipes.db"
 export TODOIST_API_TOKEN="your_todoist_token_here"
 export TODOIST_PROJECT_ID=""
 export TODOIST_API_BASE_URL="https://api.todoist.com/api/v1"
@@ -43,7 +42,7 @@ export LOCAL_IP="localhost"
 ```
 
 `BASE_URL` is preferred for QR links. `LOCAL_IP` is kept for compatibility.
-`DATABASE_URL` is required and must point to your PostgreSQL instance.
+`DATABASE_PATH` is optional and defaults to `data/recipes.db`.
 `TODOIST_PROJECT_ID` is optional; when set, created tasks are added to that specific Todoist project.
 `TODOIST_API_BASE_URL` is optional and defaults to `https://api.todoist.com/api/v1`.
 
@@ -155,13 +154,13 @@ If validation fails, the app exits early with a clear error.
 
 ## Data and Files
 
-- Recipes are stored in PostgreSQL table `recipes`.
+- Recipes are stored in the SQLite database at `DATABASE_PATH`.
 - Uploaded images are stored in `uploads/`.
 - Runtime configuration is read directly from process environment variables.
 
 Soft-delete behavior:
 - Deleting from the UI sets `recipes.deleted_at` and hides the recipe from the dashboard.
-- Archived recipes are retained in PostgreSQL for recovery.
+- Archived recipes are retained in SQLite for recovery.
 - Image files are not removed during archive, so restored recipes keep their photos.
 
 Recover archived recipes manually:
@@ -202,9 +201,9 @@ mkdir -p uploads
 make docker-run
 ```
 
-### Docker Compose (App + PostgreSQL)
+### Docker Compose
 
-This is the easiest local setup that mirrors a Kubernetes-style split between app and database.
+This is the easiest local setup. SQLite and uploaded images are stored in named volumes.
 
 Start both services:
 
@@ -228,14 +227,11 @@ Useful environment overrides before `make compose-up`:
 
 ```bash
 export TODOIST_API_TOKEN="your_todoist_token_here"
-export POSTGRES_DB="todoist_recipes"
-export POSTGRES_USER="todoist"
-export POSTGRES_PASSWORD="todoist"
 export PORT="8080"
 ```
 
 Compose persistence:
-- PostgreSQL data is stored in volume `pg_data`.
+- SQLite data is stored in volume `data`.
 - Uploaded recipe images are stored in volume `uploads_data`.
 
 Custom image/port examples:
@@ -255,8 +251,7 @@ make docker-stop
 
 - `TODOIST_API_TOKEN is not set`
   - Export `TODOIST_API_TOKEN` in your shell before starting the app.
-- `DATABASE_URL is not set`
-  - Export `DATABASE_URL` in your shell before starting the app.
+- `DATABASE_PATH` can be used to override the default SQLite file path.
 - Tasks not appearing in expected project
   - Set `--todoist-project` or `TODOIST_PROJECT_ID` to the correct project ID.
 - `todoist status 410: This endpoint is deprecated`
