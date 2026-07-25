@@ -236,6 +236,8 @@ func sourceLabelForURL(raw string) string {
 		return "Gousto"
 	case "bbcgoodfood.com", "www.bbcgoodfood.com":
 		return "BBC Good Food"
+	case "bbc.co.uk", "www.bbc.co.uk":
+		return "BBC Food"
 	default:
 		return ""
 	}

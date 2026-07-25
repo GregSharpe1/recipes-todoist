@@ -138,6 +138,8 @@ func isAllowedImportImageHost(host string) bool {
 		return true
 	case "bbcgoodfood.com", "www.bbcgoodfood.com", "images.immediate.co.uk":
 		return true
+	case "ichef.bbci.co.uk", "ichef.bbc.co.uk":
+		return true
 	default:
 		return false
 	}

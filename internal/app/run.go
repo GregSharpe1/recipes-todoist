@@ -47,6 +47,7 @@ func Run() error {
 		importerRegistry: importers.NewRegistry(
 			importers.NewGoustoImporter(http.DefaultClient),
 			importers.NewBBCGoodFoodImporter(http.DefaultClient),
+			importers.NewBBCFoodImporter(nil),
 		),
 	}
 

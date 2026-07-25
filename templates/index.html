@@ -559,13 +559,14 @@
 
     {{if eq .ActiveTab "recipes"}}
     <section class="panel">
-      <h2>Import From Gousto / BBC Good Food</h2>
+      <h2>Import Recipe</h2>
+      <p>Supported: gousto.co.uk, bbcgoodfood.com, and bbc.co.uk/food.</p>
       <form class="import-form" method="post" action="/api/import">
         <div class="field">
           <label for="import-url">Recipe URL</label>
-          <input id="import-url" name="import_url" type="text" placeholder="https://www.gousto.co.uk/... or https://www.bbcgoodfood.com/..." value="{{.ImportURL}}" required>
+          <input id="import-url" name="import_url" type="text" placeholder="https://www.bbc.co.uk/food/recipes/..." value="{{.ImportURL}}" required>
         </div>
-        <button type="submit">Import Ingredients (2 people)</button>
+        <button type="submit">Import Published Ingredients</button>
       </form>
 
       <h2>Add Recipe</h2>
@@ -581,7 +582,7 @@
           </div>
           <div class="field full">
             <label for="source-url">Original Recipe URL (optional)</label>
-            <input id="source-url" name="source_url" type="text" placeholder="https://www.gousto.co.uk/cookbook/..." value="{{.PrefillSourceURL}}">
+            <input id="source-url" name="source_url" type="text" placeholder="https://example.com/recipe/..." value="{{.PrefillSourceURL}}">
           </div>
           <input type="hidden" name="imported_image_url" value="{{.PrefillImageURL}}">
           {{if .PrefillImageURL}}
