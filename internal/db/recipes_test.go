@@ -116,6 +116,39 @@ func TestRepositoryRoundTrip(t *testing.T) {
 		t.Fatalf("updated ingredients = %#v, want %#v", got.Ingredients, updatedIngredients)
 	}
 
+	if err := repo.UpdateRecipeIngredientsAndMethod(ctx, recipe.ID, []string{"1 onion"}, []string{"Chop", "Cook"}); err != nil {
+		t.Fatalf("UpdateRecipeIngredientsAndMethod() error = %v", err)
+	}
+	got, err = repo.GetRecipeByID(ctx, recipe.ID)
+	if err != nil {
+		t.Fatalf("GetRecipeByID() after combined update error = %v", err)
+	}
+	if !reflect.DeepEqual(got.Ingredients, []string{"1 onion"}) || !reflect.DeepEqual(got.Method, []string{"Chop", "Cook"}) {
+		t.Fatalf("combined update = ingredients %#v, method %#v", got.Ingredients, got.Method)
+	}
+
+	if _, err := db.Exec(`CREATE TRIGGER fail_recipe_method_update
+BEFORE UPDATE OF method_json ON recipes
+BEGIN
+  SELECT RAISE(ABORT, 'method update failed');
+END`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+	err = repo.UpdateRecipeIngredientsAndMethod(ctx, recipe.ID, []string{"2 onions"}, []string{"Chop", "Bake"})
+	if err == nil {
+		t.Fatal("UpdateRecipeIngredientsAndMethod() error = nil, want failure")
+	}
+	if _, err := db.Exec(`DROP TRIGGER fail_recipe_method_update`); err != nil {
+		t.Fatalf("drop failure trigger: %v", err)
+	}
+	got, err = repo.GetRecipeByID(ctx, recipe.ID)
+	if err != nil {
+		t.Fatalf("GetRecipeByID() after failed combined update error = %v", err)
+	}
+	if !reflect.DeepEqual(got.Ingredients, []string{"1 onion"}) || !reflect.DeepEqual(got.Method, []string{"Chop", "Cook"}) {
+		t.Fatalf("failed combined update changed data: ingredients %#v, method %#v", got.Ingredients, got.Method)
+	}
+
 	list := RegularList{ID: "store-cupboard", Name: "Store cupboard", Items: []string{"salt", "pepper"}}
 	inserted, err = repo.InsertRegularList(ctx, list)
 	if err != nil || !inserted {
@@ -130,7 +163,7 @@ func TestRepositoryRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRecipeByID() before archive = %v", err)
 	}
-	if !reflect.DeepEqual(got.Method, []string{"Fry the chicken.", "Fry the chicken."}) {
+	if !reflect.DeepEqual(got.Method, []string{"Chop", "Cook"}) {
 		t.Fatalf("method before archive = %#v", got.Method)
 	}
 	deleted, err := repo.SoftDeleteRecipeByID(ctx, recipe.ID)
@@ -146,7 +179,7 @@ func TestRepositoryRoundTrip(t *testing.T) {
 		t.Fatalf("RestoreRecipeByID() = (%v, %v), want (true, nil)", restored, err)
 	}
 	got, err = repo.GetRecipeByID(ctx, recipe.ID)
-	if err != nil || !reflect.DeepEqual(got.Method, []string{"Fry the chicken.", "Fry the chicken."}) {
+	if err != nil || !reflect.DeepEqual(got.Method, []string{"Chop", "Cook"}) {
 		t.Fatalf("restored method = %#v, error = %v", got.Method, err)
 	}
 }
