@@ -82,6 +82,7 @@ func (a *App) buildIndexData(ctx context.Context) (indexData, error) {
 			SourceURL:            recipe.SourceURL,
 			SourceLabel:          sourceLabelForURL(recipe.SourceURL),
 			Ingredients:          recipe.Ingredients,
+			Method:               recipe.Method,
 			QRPath:               "/qr/" + recipe.ID,
 			QRPagePath:           "/recipes/" + recipe.ID + "/qr",
 			PushPath:             "/api/push/" + recipe.ID,
@@ -263,6 +264,7 @@ func (a *App) createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ingredients := parseIngredientFields(r)
+	method := parseMethodFields(r.Form["method_step[]"])
 	if name == "" {
 		a.redirectError(w, r, "recipe name is required")
 		return
@@ -303,6 +305,7 @@ func (a *App) createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		ImagePath:   imgPath,
 		SourceURL:   sourceURL,
 		Ingredients: ingredients,
+		Method:      method,
 	}
 
 	inserted, err := a.insertRecipe(r.Context(), recipe)
@@ -320,6 +323,24 @@ func (a *App) createRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.redirectNotice(w, r, "recipe added")
+}
+
+func (a *App) restoreRecipeHandler(w http.ResponseWriter, r *http.Request) {
+	recipeID := r.PathValue("id")
+	if recipeID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	restored, err := a.restoreRecipeByID(r.Context(), recipeID)
+	if err != nil {
+		a.redirectError(w, r, "failed to restore recipe")
+		return
+	}
+	if !restored {
+		a.redirectError(w, r, "recipe not found")
+		return
+	}
+	a.redirectNotice(w, r, "recipe restored")
 }
 
 func (a *App) pushHandler(w http.ResponseWriter, r *http.Request) {

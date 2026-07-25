@@ -4,6 +4,7 @@ A standalone Go web app for saving recipes (with uploaded photos) and pushing in
 
 Features:
 - Create recipes from a web form (`name`, `photo`, `ingredients`).
+- Add an optional ordered method with removable and reorderable method steps.
 - Import recipes from Gousto, BBC Good Food, and BBC Food links and prefill the create form with published ingredients.
 - Import also prefills an image preview and automatically saves that image when you save the recipe (unless you upload your own photo).
 - Use structured ingredient fields with optional measurements (for example `Chicken` + `500g`).
@@ -135,6 +136,7 @@ If validation fails, the app exits early with a clear error.
 - `POST /api/import` import recipe details from a supported source URL (Gousto, BBC Good Food, or BBC Food)
 - `POST /api/recipes` create recipe (multipart upload)
 - `POST /api/recipes/{id}/delete` archive recipe (soft delete)
+- `POST /api/recipes/{id}/restore` restore an archived recipe
 - `POST /api/recipes/{id}/photo` add or replace a recipe photo
 - `POST /api/recipes/{id}/photo/remove` remove a recipe photo
 - `POST /api/recipes/{id}/ingredients/save` replace ingredient list for a recipe (used by Edit modal Save Changes)

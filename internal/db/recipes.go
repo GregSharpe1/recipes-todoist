@@ -14,6 +14,7 @@ type Recipe struct {
 	ImagePath   string
 	SourceURL   string
 	Ingredients []string
+	Method      []string
 }
 
 type RegularList struct {
@@ -24,7 +25,7 @@ type RegularList struct {
 
 func (r *Repository) ListRecipes(ctx context.Context) ([]Recipe, error) {
 	const q = `
-SELECT id, name, image_path, source_url, ingredients_json
+SELECT id, name, image_path, source_url, ingredients_json, method_json
 FROM recipes
 WHERE deleted_at IS NULL
 ORDER BY created_at DESC, id DESC`
@@ -39,7 +40,8 @@ ORDER BY created_at DESC, id DESC`
 	for rows.Next() {
 		var recipe Recipe
 		var rawIngredients []byte
-		if err := rows.Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &recipe.SourceURL, &rawIngredients); err != nil {
+		var rawMethod []byte
+		if err := rows.Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &recipe.SourceURL, &rawIngredients, &rawMethod); err != nil {
 			return nil, err
 		}
 		ingredients, err := decodeIngredients(rawIngredients)
@@ -47,6 +49,10 @@ ORDER BY created_at DESC, id DESC`
 			return nil, err
 		}
 		recipe.Ingredients = ingredients
+		recipe.Method, err = decodeMethod(rawMethod)
+		if err != nil {
+			return nil, err
+		}
 		recipes = append(recipes, recipe)
 	}
 	if err := rows.Err(); err != nil {
@@ -71,13 +77,14 @@ func (r *Repository) RecipeExists(ctx context.Context, id string) (bool, error) 
 
 func (r *Repository) GetRecipeByID(ctx context.Context, id string) (Recipe, error) {
 	const q = `
-SELECT id, name, image_path, source_url, ingredients_json
+SELECT id, name, image_path, source_url, ingredients_json, method_json
 FROM recipes
 WHERE id = $1 AND deleted_at IS NULL`
 
 	var recipe Recipe
 	var rawIngredients []byte
-	err := r.db.QueryRowContext(ctx, q, id).Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &recipe.SourceURL, &rawIngredients)
+	var rawMethod []byte
+	err := r.db.QueryRowContext(ctx, q, id).Scan(&recipe.ID, &recipe.Name, &recipe.ImagePath, &recipe.SourceURL, &rawIngredients, &rawMethod)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Recipe{}, errors.New("recipe not found")
 	}
@@ -89,6 +96,10 @@ WHERE id = $1 AND deleted_at IS NULL`
 		return Recipe{}, err
 	}
 	recipe.Ingredients = ingredients
+	recipe.Method, err = decodeMethod(rawMethod)
+	if err != nil {
+		return Recipe{}, err
+	}
 
 	return recipe, nil
 }
@@ -98,13 +109,17 @@ func (r *Repository) InsertRecipe(ctx context.Context, recipe Recipe) (bool, err
 	if err != nil {
 		return false, err
 	}
+	rawMethod, err := json.Marshal(normalizeMethod(recipe.Method))
+	if err != nil {
+		return false, err
+	}
 
 	const q = `
-INSERT INTO recipes (id, name, image_path, source_url, ingredients_json)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO recipes (id, name, image_path, source_url, ingredients_json, method_json)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (id) DO NOTHING`
 
-	result, err := r.db.ExecContext(ctx, q, recipe.ID, recipe.Name, recipe.ImagePath, recipe.SourceURL, rawIngredients)
+	result, err := r.db.ExecContext(ctx, q, recipe.ID, recipe.Name, recipe.ImagePath, recipe.SourceURL, rawIngredients, rawMethod)
 	if err != nil {
 		return false, err
 	}
@@ -131,6 +146,18 @@ WHERE id = $1 AND deleted_at IS NULL`
 		return false, err
 	}
 
+	return rows == 1, nil
+}
+
+func (r *Repository) RestoreRecipeByID(ctx context.Context, id string) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `UPDATE recipes SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL`, id)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
 	return rows == 1, nil
 }
 
@@ -212,6 +239,28 @@ func normalizeIngredientStrings(ingredients []string) []string {
 			continue
 		}
 		out = append(out, text)
+	}
+	return out
+}
+
+func decodeMethod(raw []byte) ([]string, error) {
+	if len(raw) == 0 {
+		return []string{}, nil
+	}
+	var method []string
+	if err := json.Unmarshal(raw, &method); err != nil {
+		return nil, err
+	}
+	return normalizeMethod(method), nil
+}
+
+func normalizeMethod(method []string) []string {
+	out := make([]string, 0, len(method))
+	for _, step := range method {
+		step = strings.TrimSpace(step)
+		if step != "" {
+			out = append(out, step)
+		}
 	}
 	return out
 }

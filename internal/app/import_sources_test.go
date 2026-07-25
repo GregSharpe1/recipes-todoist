@@ -2,6 +2,19 @@ package app
 
 import "testing"
 
+func TestParseMethodFieldsNormalizesWithoutRemovingDuplicates(t *testing.T) {
+	got := parseMethodFields([]string{"  Mix ingredients\n thoroughly  ", "", "Mix ingredients\n thoroughly", "  Bake  "})
+	want := []string{"Mix ingredients\n thoroughly", "Mix ingredients\n thoroughly", "Bake"}
+	if len(got) != len(want) {
+		t.Fatalf("parseMethodFields() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("parseMethodFields()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestSourceLabelForBBCFoodURL(t *testing.T) {
 	t.Parallel()
 

@@ -167,6 +167,17 @@ func parseIngredientTextFields(values []string) []string {
 	return out
 }
 
+func parseMethodFields(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		step := strings.TrimSpace(value)
+		if step != "" {
+			out = append(out, step)
+		}
+	}
+	return out
+}
+
 func splitIngredientForPrefill(raw string) (string, string) {
 	text := strings.TrimSpace(raw)
 	if text == "" {

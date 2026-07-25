@@ -57,6 +57,7 @@ func Run() error {
 	mux.Handle("POST /api/recipes", http.HandlerFunc(app.createRecipeHandler))
 	mux.Handle("POST /api/regular-lists", http.HandlerFunc(app.createRegularListHandler))
 	mux.Handle("POST /api/recipes/{id}/delete", http.HandlerFunc(app.deleteRecipeHandler))
+	mux.Handle("POST /api/recipes/{id}/restore", http.HandlerFunc(app.restoreRecipeHandler))
 	mux.Handle("POST /api/regular-lists/{id}/delete", http.HandlerFunc(app.deleteRegularListHandler))
 	mux.Handle("POST /api/recipes/{id}/photo", http.HandlerFunc(app.updateRecipePhotoHandler))
 	mux.Handle("POST /api/recipes/{id}/photo/remove", http.HandlerFunc(app.removeRecipePhotoHandler))
