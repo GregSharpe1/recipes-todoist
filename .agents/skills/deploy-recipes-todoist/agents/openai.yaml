@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Recipes Todoist"
+  short_description: "Deploy the latest app image through a k8s PR"
+  default_prompt: "Use $deploy-recipes-todoist to promote the latest merged recipes-todoist image through a pull request in the k8s repository."
