@@ -615,6 +615,18 @@
             </div>
             <textarea id="ingredients" name="ingredients" hidden></textarea>
           </div>
+          <div class="field full">
+            <label>Method (optional)</label>
+            <div id="method-builder" class="ingredient-builder">
+              <div class="ingredient-row method-row">
+                <textarea name="method_step[]" rows="2" placeholder="Method step"></textarea>
+                <button class="row-up" type="button">Move up</button>
+                <button class="row-down" type="button">Move down</button>
+                <button class="row-remove" type="button">Remove</button>
+              </div>
+            </div>
+            <div class="inline-actions"><button id="add-method-step" class="secondary" type="button">Add method step</button></div>
+          </div>
         </div>
         <div class="actions">
           <button type="submit">Save Recipe</button>
@@ -633,6 +645,14 @@
             <h3>{{.Name}}</h3>
             {{if .SourceLabel}}<span class="source-badge">Imported from {{.SourceLabel}}</span>{{end}}
           </div>
+          {{if .Method}}
+          <div class="recipe-method">
+            <h4>Method</h4>
+            <ol>
+              {{range .Method}}<li>{{.}}</li>{{end}}
+            </ol>
+          </div>
+          {{end}}
           <div class="card-actions">
             <button type="button" class="open-modal" data-modal-id="push-modal-{{.ID}}">Add to Todoist</button>
             <button type="button" class="secondary open-modal" data-modal-id="edit-modal-{{.ID}}">Edit</button>
@@ -874,6 +894,24 @@
 
       initBuilder('ingredient-builder', 'add-ingredient', 'ingredient_name[]', 'ingredient_measurement[]', 'Ingredient (e.g. Chicken)', 'Measurement (e.g. 500g)');
       initBuilder('regular-builder', 'add-regular-item', 'regular_ingredient_name[]', 'regular_ingredient_measurement[]', 'Item (e.g. Bananas)', 'Measurement (e.g. 6)');
+
+      const methodBuilder = document.getElementById('method-builder');
+      const methodStepTemplate = function () {
+        const row = document.createElement('div');
+        row.className = 'ingredient-row method-row';
+        row.innerHTML = '<textarea name="method_step[]" rows="2" placeholder="Method step"></textarea><button class="row-up" type="button">Move up</button><button class="row-down" type="button">Move down</button><button class="row-remove" type="button">Remove</button>';
+        return row;
+      };
+      document.getElementById('add-method-step').addEventListener('click', function () { methodBuilder.appendChild(methodStepTemplate()); });
+      methodBuilder.addEventListener('click', function (event) {
+        const button = event.target;
+        if (!(button instanceof HTMLElement)) return;
+        const row = button.closest('.method-row');
+        if (!row) return;
+        if (button.classList.contains('row-remove')) row.remove();
+        if (button.classList.contains('row-up') && row.previousElementSibling) methodBuilder.insertBefore(row, row.previousElementSibling);
+        if (button.classList.contains('row-down') && row.nextElementSibling) methodBuilder.insertBefore(row.nextElementSibling, row);
+      });
 
       const createEditIngredientRow = function (value, inputName) {
         const li = document.createElement('li');

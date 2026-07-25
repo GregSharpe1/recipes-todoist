@@ -28,6 +28,10 @@ func (a *App) softDeleteRecipeByID(ctx context.Context, id string) (bool, error)
 	return a.repo.SoftDeleteRecipeByID(ctx, id)
 }
 
+func (a *App) restoreRecipeByID(ctx context.Context, id string) (bool, error) {
+	return a.repo.RestoreRecipeByID(ctx, id)
+}
+
 func (a *App) updateRecipeIngredients(ctx context.Context, id string, ingredients []string) error {
 	return a.repo.UpdateRecipeIngredients(ctx, id, ingredients)
 }

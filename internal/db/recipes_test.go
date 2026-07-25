@@ -27,6 +27,46 @@ func TestOpenFromEnvCreatesSQLiteDatabase(t *testing.T) {
 	}
 }
 
+func TestEnsureSchemaMigratesRecipesWithoutMethod(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:recipes-legacy-test?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+
+	_, err = db.Exec(`CREATE TABLE recipes (
+		id TEXT PRIMARY KEY, name TEXT NOT NULL, image_path TEXT NOT NULL,
+		source_url TEXT NOT NULL DEFAULT '', ingredients_json TEXT NOT NULL,
+		deleted_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := EnsureSchema(context.Background(), db); err != nil {
+		t.Fatalf("EnsureSchema() error = %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO recipes (id, name, image_path, ingredients_json) VALUES ('legacy', 'Legacy', '', '[]')`); err != nil {
+		t.Fatalf("insert legacy recipe: %v", err)
+	}
+
+	var method string
+	if err := db.QueryRow(`SELECT method_json FROM recipes`).Scan(&method); err != nil {
+		t.Fatalf("read migrated method: %v", err)
+	}
+	if method != "[]" {
+		t.Fatalf("migrated method = %q, want []", method)
+	}
+	repo := NewRepository(db)
+	recipe, err := repo.GetRecipeByID(context.Background(), "legacy")
+	if err != nil {
+		t.Fatalf("read migrated recipe: %v", err)
+	}
+	if len(recipe.Method) != 0 {
+		t.Fatalf("migrated recipe method = %#v, want empty", recipe.Method)
+	}
+}
+
 func TestRepositoryRoundTrip(t *testing.T) {
 	db, err := sql.Open("sqlite", "file:recipes-test?mode=memory&cache=shared")
 	if err != nil {
@@ -47,6 +87,7 @@ func TestRepositoryRoundTrip(t *testing.T) {
 		ImagePath:   "/uploads/pie.jpg",
 		SourceURL:   "https://example.test/recipe",
 		Ingredients: []string{"500g chicken", "1 onion"},
+		Method:      []string{"  Fry the chicken.  ", "", "Fry the chicken."},
 	}
 	inserted, err := repo.InsertRecipe(ctx, recipe)
 	if err != nil || !inserted {
@@ -57,8 +98,10 @@ func TestRepositoryRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRecipeByID() error = %v", err)
 	}
-	if !reflect.DeepEqual(got, recipe) {
-		t.Fatalf("GetRecipeByID() = %#v, want %#v", got, recipe)
+	want := recipe
+	want.Method = []string{"Fry the chicken.", "Fry the chicken."}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetRecipeByID() = %#v, want %#v", got, want)
 	}
 
 	updatedIngredients := []string{"600g chicken", "2 onions"}
@@ -83,6 +126,13 @@ func TestRepositoryRoundTrip(t *testing.T) {
 	if err != nil || !exists {
 		t.Fatalf("RecipeExists() = (%v, %v), want (true, nil)", exists, err)
 	}
+	got, err = repo.GetRecipeByID(ctx, recipe.ID)
+	if err != nil {
+		t.Fatalf("GetRecipeByID() before archive = %v", err)
+	}
+	if !reflect.DeepEqual(got.Method, []string{"Fry the chicken.", "Fry the chicken."}) {
+		t.Fatalf("method before archive = %#v", got.Method)
+	}
 	deleted, err := repo.SoftDeleteRecipeByID(ctx, recipe.ID)
 	if err != nil || !deleted {
 		t.Fatalf("SoftDeleteRecipeByID() = (%v, %v), want (true, nil)", deleted, err)
@@ -90,5 +140,13 @@ func TestRepositoryRoundTrip(t *testing.T) {
 	exists, err = repo.RecipeExists(ctx, recipe.ID)
 	if err != nil || exists {
 		t.Fatalf("RecipeExists() after delete = (%v, %v), want (false, nil)", exists, err)
+	}
+	restored, err := repo.RestoreRecipeByID(ctx, recipe.ID)
+	if err != nil || !restored {
+		t.Fatalf("RestoreRecipeByID() = (%v, %v), want (true, nil)", restored, err)
+	}
+	got, err = repo.GetRecipeByID(ctx, recipe.ID)
+	if err != nil || !reflect.DeepEqual(got.Method, []string{"Fry the chicken.", "Fry the chicken."}) {
+		t.Fatalf("restored method = %#v, error = %v", got.Method, err)
 	}
 }

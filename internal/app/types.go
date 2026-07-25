@@ -18,6 +18,7 @@ type recipeCard struct {
 	SourceURL            string
 	SourceLabel          string
 	Ingredients          []string
+	Method               []string
 	QRPath               string
 	QRPagePath           string
 	PushPath             string

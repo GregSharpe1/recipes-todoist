@@ -52,11 +52,25 @@ CREATE TABLE IF NOT EXISTS recipes (
 	image_path TEXT NOT NULL,
 	source_url TEXT NOT NULL DEFAULT '',
 	ingredients_json TEXT NOT NULL,
+	method_json TEXT NOT NULL DEFAULT '[]',
 	deleted_at TEXT,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );`
 	if _, err := db.ExecContext(ctx, q); err != nil {
 		return err
+	}
+
+	// Existing databases predate methods. Adding the column with a default keeps
+	// those recipes valid without requiring a manual migration.
+	var methodColumn int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('recipes') WHERE name = 'method_json'`).Scan(&methodColumn)
+	if err != nil {
+		return err
+	}
+	if methodColumn == 0 {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE recipes ADD COLUMN method_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
+			return err
+		}
 	}
 
 	const qRegular = `
