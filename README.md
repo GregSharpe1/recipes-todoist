@@ -4,7 +4,7 @@ A standalone Go web app for saving recipes (with uploaded photos) and pushing in
 
 Features:
 - Create recipes from a web form (`name`, `photo`, `ingredients`).
-- Import recipes from Gousto and BBC Good Food links and prefill the create form for 2 people.
+- Import recipes from Gousto, BBC Good Food, and BBC Food links and prefill the create form with published ingredients.
 - Import also prefills an image preview and automatically saves that image when you save the recipe (unless you upload your own photo).
 - Use structured ingredient fields with optional measurements (for example `Chicken` + `500g`).
 - Edit existing recipes from an Edit modal (add, update, and remove ingredients).
@@ -56,12 +56,14 @@ go run .
 
 - `http://localhost:8080`
 
-## Import From Gousto / BBC Good Food
+## Import Recipes
 
-- Paste a `gousto.co.uk` or `bbcgoodfood.com` recipe URL into the import field and click `Import Ingredients (2 people)`.
+- Paste a `gousto.co.uk`, `bbcgoodfood.com`, or `bbc.co.uk/food/recipes` URL into the import field and click `Import Published Ingredients`.
 - The app prefills the Add Recipe form (name + ingredients) so you can review before saving.
 - The app also prefills the source image preview and saves that image on recipe save if no manual photo is uploaded.
-- If the page does not clearly expose 2-person quantities, the app falls back to default ingredient amounts and shows a warning.
+- When a source explicitly provides a two-person variant, the importer uses it.
+- Otherwise, the app preserves the recipe's published ingredient quantities and shows a warning when they are not confirmed for two people.
+- BBC Food recipes retain their published serving quantities; free-form ingredient amounts are not automatically rescaled.
 
 ## QR URL Configuration (Important)
 
@@ -130,7 +132,7 @@ If validation fails, the app exits early with a clear error.
 ## Routes
 
 - `GET /` dashboard + create form
-- `POST /api/import` import recipe details from supported source URL (currently Gousto and BBC Good Food)
+- `POST /api/import` import recipe details from a supported source URL (Gousto, BBC Good Food, or BBC Food)
 - `POST /api/recipes` create recipe (multipart upload)
 - `POST /api/recipes/{id}/delete` archive recipe (soft delete)
 - `POST /api/recipes/{id}/photo` add or replace a recipe photo

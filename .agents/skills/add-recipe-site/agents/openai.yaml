@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add Recipe Site"
+  short_description: "Onboard recipe websites into this Go app"
+  default_prompt: "Use $add-recipe-site to add support for this recipe website and verify the importer."

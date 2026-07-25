@@ -48,7 +48,7 @@ func (a *App) importRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		msg := "import failed"
 		switch {
 		case errors.Is(err, importers.ErrUnsupportedSource):
-			msg = "unsupported source URL (currently gousto.co.uk and bbcgoodfood.com)"
+			msg = "unsupported source URL (currently gousto.co.uk, bbcgoodfood.com, and bbc.co.uk/food)"
 		case errors.Is(err, importers.ErrFetchFailed):
 			msg = "failed to fetch recipe page"
 		case errors.Is(err, importers.ErrParseFailed):
