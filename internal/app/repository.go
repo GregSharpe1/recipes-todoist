@@ -36,6 +36,10 @@ func (a *App) updateRecipeIngredients(ctx context.Context, id string, ingredient
 	return a.repo.UpdateRecipeIngredients(ctx, id, ingredients)
 }
 
+func (a *App) updateRecipeIngredientsAndMethod(ctx context.Context, id string, ingredients, method []string) error {
+	return a.repo.UpdateRecipeIngredientsAndMethod(ctx, id, ingredients, method)
+}
+
 func (a *App) updateRecipeImagePath(ctx context.Context, id, imagePath string) error {
 	return a.repo.UpdateRecipeImagePath(ctx, id, imagePath)
 }

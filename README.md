@@ -8,7 +8,7 @@ Features:
 - Import recipes from Gousto, BBC Good Food, and BBC Food links and prefill the create form with published ingredients.
 - Import also prefills an image preview and automatically saves that image when you save the recipe (unless you upload your own photo).
 - Use structured ingredient fields with optional measurements (for example `Chicken` + `500g`).
-- Edit existing recipes from an Edit modal (add, update, and remove ingredients).
+- Edit existing recipes from an Edit modal (add, update, remove, and reorder ingredients and Method steps together).
 - Choose ingredients at push time from a popup (all selected by default).
 - Keep the original recipe source URL and open it from each recipe card.
 - Update or remove photos on existing recipes from the Edit modal.

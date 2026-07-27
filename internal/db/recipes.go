@@ -187,6 +187,43 @@ WHERE id = $1 AND deleted_at IS NULL`
 	return nil
 }
 
+// UpdateRecipeIngredientsAndMethod persists the two editable recipe lists as
+// one unit so a failed edit cannot leave them out of sync.
+func (r *Repository) UpdateRecipeIngredientsAndMethod(ctx context.Context, id string, ingredients, method []string) error {
+	rawIngredients, err := json.Marshal(normalizeIngredientStrings(ingredients))
+	if err != nil {
+		return err
+	}
+	rawMethod, err := json.Marshal(normalizeMethod(method))
+	if err != nil {
+		return err
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	const q = `
+UPDATE recipes
+SET ingredients_json = $2, method_json = $3
+WHERE id = $1 AND deleted_at IS NULL`
+	result, err := tx.ExecContext(ctx, q, id, rawIngredients, rawMethod)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("recipe not found")
+	}
+
+	return tx.Commit()
+}
+
 func (r *Repository) UpdateRecipeImagePath(ctx context.Context, id, imagePath string) error {
 	const q = `
 UPDATE recipes

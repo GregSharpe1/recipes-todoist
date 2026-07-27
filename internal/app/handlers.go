@@ -505,17 +505,27 @@ func (a *App) saveIngredientsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ingredients := parseIngredientTextFields(r.Form["ingredient_text[]"])
+	methodValues, methodSubmitted := r.Form["method_step[]"]
+	method := parseMethodFields(methodValues)
 	if len(ingredients) == 0 {
 		a.redirectError(w, r, "at least one ingredient is required")
 		return
 	}
+	if !methodSubmitted {
+		recipe, err := a.getRecipeByID(r.Context(), recipeID)
+		if err != nil {
+			a.redirectError(w, r, "failed to load recipe")
+			return
+		}
+		method = recipe.Method
+	}
 
-	if err := a.updateRecipeIngredients(r.Context(), recipeID, ingredients); err != nil {
-		a.redirectError(w, r, "failed to save ingredients")
+	if err := a.updateRecipeIngredientsAndMethod(r.Context(), recipeID, ingredients, method); err != nil {
+		a.redirectError(w, r, "failed to save recipe")
 		return
 	}
 
-	a.redirectNotice(w, r, "recipe ingredients saved")
+	a.redirectNotice(w, r, "recipe saved")
 }
 
 func (a *App) updateRecipePhotoHandler(w http.ResponseWriter, r *http.Request) {

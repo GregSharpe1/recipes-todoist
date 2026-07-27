@@ -473,6 +473,36 @@
       margin: 0;
     }
 
+    .method-edit {
+      margin-top: 1rem;
+    }
+
+    .method-edit h5 {
+      margin: 0 0 0.55rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .method-edit-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .method-edit-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .method-edit-row textarea {
+      min-height: 72px;
+    }
+
     .btn-small {
       padding: 0.46rem 0.72rem;
       min-width: 84px;
@@ -522,6 +552,7 @@
       .import-form,
       .form-grid,
       .ingredient-row,
+      .method-edit-row,
       .ingredient-add,
       .upload-photo-form {
         grid-template-columns: 1fr;
@@ -720,6 +751,35 @@
             <div class="modal-actions left">
               <button type="button" class="secondary edit-row-add">Add Ingredient</button>
             </div>
+            <section class="method-edit">
+              <h5>Method (optional)</h5>
+              <ul class="method-edit-list" data-method-edit-list>
+                {{if .Method}}
+                {{range .Method}}
+                <li class="method-edit-item">
+                  <div class="method-edit-row">
+                    <textarea name="method_step[]" rows="2">{{.}}</textarea>
+                    <button class="secondary btn-small method-row-up" type="button">Move up</button>
+                    <button class="secondary btn-small method-row-down" type="button">Move down</button>
+                    <button class="secondary btn-small method-row-remove" type="button">Remove</button>
+                  </div>
+                </li>
+                {{end}}
+                {{else}}
+                <li class="method-edit-item">
+                  <div class="method-edit-row">
+                    <textarea name="method_step[]" rows="2" placeholder="Method step"></textarea>
+                    <button class="secondary btn-small method-row-up" type="button">Move up</button>
+                    <button class="secondary btn-small method-row-down" type="button">Move down</button>
+                    <button class="secondary btn-small method-row-remove" type="button">Remove</button>
+                  </div>
+                </li>
+                {{end}}
+              </ul>
+              <div class="modal-actions left">
+                <button type="button" class="secondary method-row-add">Add method step</button>
+              </div>
+            </section>
             <div class="modal-actions">
               <button type="button" class="secondary close-modal" data-modal-id="edit-modal-{{.ID}}">Cancel</button>
               <button type="submit">Save Changes</button>
@@ -949,6 +1009,24 @@
         });
       };
 
+      const createEditMethodRow = function (value) {
+        const li = document.createElement('li');
+        li.className = 'method-edit-item';
+        li.innerHTML = '<div class="method-edit-row"><textarea name="method_step[]" rows="2" placeholder="Method step"></textarea><button class="secondary btn-small method-row-up" type="button">Move up</button><button class="secondary btn-small method-row-down" type="button">Move down</button><button class="secondary btn-small method-row-remove" type="button">Remove</button></div>';
+        li.querySelector('textarea').value = value || '';
+        return li;
+      };
+
+      const refreshMethodRows = function (list) {
+        const rows = list.querySelectorAll('.method-edit-item');
+        rows.forEach(function (row, index) {
+          const up = row.querySelector('.method-row-up');
+          const down = row.querySelector('.method-row-down');
+          if (up) up.disabled = index === 0;
+          if (down) down.disabled = index === rows.length - 1;
+        });
+      };
+
       document.querySelectorAll('[data-edit-list-form]').forEach(function (form) {
         const list = form.querySelector('[data-edit-list]');
         const addRowButton = form.querySelector('.edit-row-add');
@@ -983,6 +1061,31 @@
         });
 
         refreshEditRows(list, inputName);
+
+        const methodList = form.querySelector('[data-method-edit-list]');
+        const methodAddButton = form.querySelector('.method-row-add');
+        if (!methodList || !methodAddButton) {
+          return;
+        }
+        methodAddButton.addEventListener('click', function () {
+          methodList.appendChild(createEditMethodRow(''));
+          refreshMethodRows(methodList);
+        });
+        methodList.addEventListener('click', function (event) {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const row = target.closest('.method-edit-item');
+          if (!row) return;
+          if (target.classList.contains('method-row-remove')) {
+            row.remove();
+          } else if (target.classList.contains('method-row-up') && row.previousElementSibling) {
+            methodList.insertBefore(row, row.previousElementSibling);
+          } else if (target.classList.contains('method-row-down') && row.nextElementSibling) {
+            methodList.insertBefore(row.nextElementSibling, row);
+          }
+          refreshMethodRows(methodList);
+        });
+        refreshMethodRows(methodList);
       });
 
       document.querySelectorAll('.open-modal').forEach(function (button) {
