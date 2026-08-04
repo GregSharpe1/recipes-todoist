@@ -956,22 +956,25 @@
       initBuilder('regular-builder', 'add-regular-item', 'regular_ingredient_name[]', 'regular_ingredient_measurement[]', 'Item (e.g. Bananas)', 'Measurement (e.g. 6)');
 
       const methodBuilder = document.getElementById('method-builder');
+      const addMethodStepButton = document.getElementById('add-method-step');
       const methodStepTemplate = function () {
         const row = document.createElement('div');
         row.className = 'ingredient-row method-row';
         row.innerHTML = '<textarea name="method_step[]" rows="2" placeholder="Method step"></textarea><button class="row-up" type="button">Move up</button><button class="row-down" type="button">Move down</button><button class="row-remove" type="button">Remove</button>';
         return row;
       };
-      document.getElementById('add-method-step').addEventListener('click', function () { methodBuilder.appendChild(methodStepTemplate()); });
-      methodBuilder.addEventListener('click', function (event) {
-        const button = event.target;
-        if (!(button instanceof HTMLElement)) return;
-        const row = button.closest('.method-row');
-        if (!row) return;
-        if (button.classList.contains('row-remove')) row.remove();
-        if (button.classList.contains('row-up') && row.previousElementSibling) methodBuilder.insertBefore(row, row.previousElementSibling);
-        if (button.classList.contains('row-down') && row.nextElementSibling) methodBuilder.insertBefore(row.nextElementSibling, row);
-      });
+      if (methodBuilder && addMethodStepButton) {
+        addMethodStepButton.addEventListener('click', function () { methodBuilder.appendChild(methodStepTemplate()); });
+        methodBuilder.addEventListener('click', function (event) {
+          const button = event.target;
+          if (!(button instanceof HTMLElement)) return;
+          const row = button.closest('.method-row');
+          if (!row) return;
+          if (button.classList.contains('row-remove')) row.remove();
+          if (button.classList.contains('row-up') && row.previousElementSibling) methodBuilder.insertBefore(row, row.previousElementSibling);
+          if (button.classList.contains('row-down') && row.nextElementSibling) methodBuilder.insertBefore(row.nextElementSibling, row);
+        });
+      }
 
       const createEditIngredientRow = function (value, inputName) {
         const li = document.createElement('li');
